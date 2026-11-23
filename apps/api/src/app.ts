@@ -20,6 +20,7 @@ import contactRoutes from "./modules/contacts/routes.js";
 import agentRoutes from "./modules/agents/routes.js";
 import settingsRoutes from "./modules/settings/routes.js";
 import campaignRoutes from "./modules/campaigns/routes.js";
+import { historyRouter, recordingsRouter, transcriptsRouter } from "./modules/history/routes.js";
 import twilioWebhooks from "./modules/webhooks/twilio.js";
 import { redis, redisHealthy } from "./lib/redis.js";
 import { WORKER_HEARTBEAT_KEY } from "./queues/index.js";
@@ -67,7 +68,10 @@ export function createApp() {
   api.use("/integrations", integrationRoutes);
   api.use("/phone-numbers", phoneNumberRoutes);
   api.use("/setup", setupRoutes);
+  api.use("/calls", historyRouter); // list, live, export, detail (before /calls/:id)
   api.use("/calls", callRoutes);
+  api.use("/recordings", recordingsRouter);
+  api.use("/transcripts", transcriptsRouter);
   api.use("/voice", voiceRoutes);
   api.use("/contacts", contactRoutes);
   api.use("/agents", agentRoutes);

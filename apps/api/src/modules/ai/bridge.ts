@@ -132,7 +132,7 @@ export class AiCallBridge {
     const { rows } = await query(
       `UPDATE calls SET metadata = metadata || jsonb_build_object('streamStarted', true, 'streamSid', $3::text)
         WHERE id = $1 AND org_id = $4 AND metadata->>'streamTokenHash' = $2 AND coalesce(metadata->>'streamStarted','false') = 'false'
-        RETURNING ai_agent_id, metadata`,
+        RETURNING ai_agent_id, metadata, recording_enabled`,
       [this.callId, hashToken(token ?? ""), this.streamSid, this.orgId],
     );
     if (!rows[0]) {
@@ -160,7 +160,7 @@ export class AiCallBridge {
           type: "realtime",
           model,
           output_modalities: ["audio"],
-          instructions: buildInstructions(agent, rows[0].metadata?.extraInstructions),
+          instructions: buildInstructions(agent, rows[0].metadata?.extraInstructions, { recording: rows[0].recording_enabled }),
           audio: {
             input: {
               format: { type: "audio/pcmu" },

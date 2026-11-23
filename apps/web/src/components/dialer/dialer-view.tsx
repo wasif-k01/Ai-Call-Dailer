@@ -100,6 +100,10 @@ export default function DialerView({ initialMode = "human" }: { initialMode?: Mo
   const dtmfTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const device = useTwilioDevice();
   const currentCallId = useRef<string | null>(null);
+  const [recordingOn, setRecordingOn] = useState(false);
+  useEffect(() => {
+    api<{ settings: { recording_enabled: boolean } }>("/settings/calling").then((r) => setRecordingOn(r.settings.recording_enabled)).catch(() => {});
+  }, []);
   useEffect(() => {
     currentCallId.current = call?.id ?? null;
   }, [call?.id]);
@@ -419,6 +423,7 @@ export default function DialerView({ initialMode = "human" }: { initialMode?: Mo
               <PhoneOff className="size-5" /> Hang Up
             </Button>
           )}
+          {recordingOn && mode === "human" && <Alert tone="warning">Call recording is on. Tell the person at the start of the call that it is being recorded.</Alert>}
           {shownError && <Alert>{shownError}</Alert>}
         </Card>
 

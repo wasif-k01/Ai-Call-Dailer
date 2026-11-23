@@ -68,7 +68,7 @@ MANDATORY RULES (these override everything above):
 - Never ask for passwords, card numbers, bank details or government ID numbers.
 - Speak in the language the person uses. Keep turns short; this is a phone call.`;
 
-export function buildInstructions(agent: Agent, extra?: string | null) {
+export function buildInstructions(agent: Agent, extra?: string | null, opts: { recording?: boolean } = {}) {
   return [
     agent.system_instructions.trim(),
     agent.conversation_style ? `Conversation style: ${agent.conversation_style}.` : "",
@@ -79,6 +79,7 @@ export function buildInstructions(agent: Agent, extra?: string | null) {
     agent.call_ending_instructions ? `How to end calls:\n${agent.call_ending_instructions.trim()}` : "",
     extra ? `Additional instructions for this call:\n${extra.trim()}` : "",
     MANDATORY,
+    opts.recording ? "- This call is being recorded. Say so in your opening greeting (e.g. \"this call is recorded\"). If the person objects, apologise, say goodbye and call end_call." : "",
   ]
     .filter(Boolean)
     .join("\n\n");

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { api, ApiError } from "@/lib/api";
 import { Alert, Button, Card, Input, PageHeader } from "@/components/ui";
 import { can, useSession } from "@/components/shell/session";
@@ -69,6 +69,7 @@ export default function SettingsPage() {
             </form>
           </Card>
         )}
+        {can(session, "*") && <CallingSettings />}
         <Card>
           <h2 className="mb-4 font-semibold">Change password</h2>
           <form onSubmit={changePassword} className="space-y-4">
@@ -80,5 +81,48 @@ export default function SettingsPage() {
         </Card>
       </div>
     </>
+  );
+}
+
+function CallingSettings() {
+  const [settings, setSettings] = useState<{ recording_enabled: boolean; max_concurrent_ai_calls: number } | null>(null);
+  const [msg, setMsg] = useState<{ tone: "success" | "danger"; text: string } | null>(null);
+  const [saving, setSaving] = useState(false);
+  useEffect(() => {
+    api<{ settings: { recording_enabled: boolean; max_concurrent_ai_calls: number } }>("/settings/calling").then((r) => setSettings(r.settings)).catch(() => {});
+  }, []);
+  if (!settings) return null;
+  async function save() {
+    setSaving(true);
+    setMsg(null);
+    try {
+      await api("/settings/calling", { method: "PUT", json: { recordingEnabled: settings!.recording_enabled, maxConcurrentAiCalls: settings!.max_concurrent_ai_calls } });
+      setMsg({ tone: "success", text: "Saved. Applies to calls started from now on." });
+    } catch (e) {
+      setMsg({ tone: "danger", text: (e as Error).message });
+    } finally {
+      setSaving(false);
+    }
+  }
+  return (
+    <Card>
+      <h2 className="mb-4 font-semibold">Calling</h2>
+      <div className="space-y-4">
+        <label className="flex items-start gap-3 text-sm">
+          <input type="checkbox" className="mt-0.5 size-4 accent-[var(--primary)]" checked={settings.recording_enabled} onChange={(e) => setSettings({ ...settings, recording_enabled: e.target.checked })} />
+          <span>
+            <span className="font-medium">Record calls</span>
+            <span className="block text-muted">AI agents will say the call is recorded; for human calls, you must tell the person yourself. Many countries (including the UAE and UK) require consent to record. Check before switching this on.</span>
+          </span>
+        </label>
+        <label className="block space-y-1.5 text-sm">
+          <span className="flex justify-between font-medium">AI calls at the same time (whole account) <span className="tabular-nums">{settings.max_concurrent_ai_calls}</span></span>
+          <input type="range" min={1} max={20} value={settings.max_concurrent_ai_calls} onChange={(e) => setSettings({ ...settings, max_concurrent_ai_calls: Number(e.target.value) })} className="w-full accent-[var(--primary)]" />
+          <span className="text-xs text-muted">A safety cap across all campaigns and manual AI calls.</span>
+        </label>
+        {msg && <Alert tone={msg.tone}>{msg.text}</Alert>}
+        <Button onClick={save} loading={saving}>Save calling settings</Button>
+      </div>
+    </Card>
   );
 }

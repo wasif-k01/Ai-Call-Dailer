@@ -46,7 +46,17 @@ router.post("/voice/client", verifyTwilio, async (req, res) => {
   const t = new VoiceResponse();
   const dial = t.dial();
   dial.conference(
-    { beep: "false", startConferenceOnEnter: true, endConferenceOnExit: true, waitUrl: "", participantLabel: "agent" },
+    {
+      beep: "false", startConferenceOnEnter: true, endConferenceOnExit: true, waitUrl: "", participantLabel: "agent",
+      ...(call.recording_enabled
+        ? {
+            record: "record-from-start",
+            recordingStatusCallback: publicUrl(`/webhooks/twilio/recording?callId=${callId}`),
+            recordingStatusCallbackMethod: "POST",
+            recordingStatusCallbackEvent: ["completed"],
+          }
+        : {}),
+    },
     conferenceName(callId),
   );
   xml(res, t);
@@ -132,6 +142,24 @@ router.post("/client-status", verifyTwilio, async (req, res) => {
       if (!rows[0].provider_call_sid || rows[0].status !== "in_progress")
         await transitionCall(orgId, callId, rows[0].status === "in_progress" ? "completed" : "canceled");
     }
+  }
+  res.sendStatus(204);
+});
+
+/** A recording finished. The audio stays in Twilio and is only served through the authenticated API. */
+router.post("/recording", verifyTwilio, async (req, res) => {
+  const { id: callId, orgId } = req.twilioCall!;
+  const b = req.body;
+  if (b.RecordingStatus === "completed" && b.RecordingSid) {
+    await query(
+      `INSERT INTO call_recordings (org_id, call_id, provider_recording_sid, duration_sec, status, channels, source)
+       VALUES ($1,$2,$3,$4,'completed',$5,$6)
+       ON CONFLICT (provider_recording_sid) DO UPDATE SET status = 'completed', duration_sec = EXCLUDED.duration_sec`,
+      [orgId, callId, b.RecordingSid, Number(b.RecordingDuration) || null, Number(b.RecordingChannels) || null, b.ConferenceSid ? "conference" : "call"],
+    );
+    await logCallEvent(orgId, callId, "recording.completed", { duration: b.RecordingDuration });
+  } else if (b.RecordingStatus === "failed" || b.RecordingStatus === "absent") {
+    await logCallEvent(orgId, callId, "recording.failed", { status: b.RecordingStatus, error: b.ErrorCode });
   }
   res.sendStatus(204);
 });

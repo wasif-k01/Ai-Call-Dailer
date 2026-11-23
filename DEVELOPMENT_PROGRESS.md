@@ -2,7 +2,7 @@
 
 _Last updated: 2026-11-23_
 
-## Current phase: Phase 6 built: waiting for the owner's real small-campaign test
+## Current phase: Phase 7 done → Phase 8 (usage, costs, security) next. Real campaign test and real recording test are still pending.
 
 | Phase | Scope | Status |
 |---|---|---|
@@ -11,8 +11,8 @@ _Last updated: 2026-11-23_
 | 3 | Unified Dialer + Human-to-Human calling (Twilio Voice JS SDK) | ✅ Real browser → UAE mobile call completed (75s) on 2026-11-23. **Hold and keypad not yet tried on a real call.** |
 | 4 | OpenAI Realtime voice + AI-to-Human calling | Pending |
 | 5 | AI Agent management | ✅ Done: CRUD, duplicate, activate/deactivate, guarded delete, instruction preview, test-call shortcut; 10 tests |
-| 6 | Bulk campaigns, CSV/XLSX upload, BullMQ queue, DNC list | 🟡 Built; 15 engine/API tests pass with mocked Twilio; **real campaign test pending** |
-| 7 | Live Calls, Call History, Recordings, Transcripts | Pending |
+| 6 | Bulk campaigns, CSV/XLSX upload, BullMQ queue, DNC list | 🟡 Built; 15 engine/API tests pass with mocked Twilio; **owner hasn't run a real campaign yet** |
+| 7 | Live Calls, Call History, Recordings, Transcripts | ✅ Built; 9 tests; checked against real call data (9 calls, 8 transcripts). **Recording not yet tried on a real call** (off by default). |
 | 8 | Usage & cost tracking, security hardening | Pending |
 | 9 | Production deployment + end-to-end testing | 🟡 Configs, docs and infrastructure code ready; **not deployed** (waiting for approval) |
 
@@ -48,6 +48,24 @@ apps/api  (Express 5, TypeScript, zod, pg)    :4000  → deploy to Railway/Rende
 - App shell: sidebar with all 14 sections, responsive mobile menu. Unbuilt sections show an honest "not built yet" placeholder with no fake controls.
 - Account Settings: profile and change password
 - Health check: `GET /health` (includes a DB check)
+
+## Phase 7: Live calls, history, recordings, transcripts
+- **Live Calls:** every active call, updated live, with a running timer and status.
+  - Controls: End call (all calls). Mute (the browser user's conference leg) and Hold (human calls only). View transcript/details.
+  - The page explains why Mute/Hold don't apply to AI calls, and why Transfer isn't offered yet (there's no destination to transfer to). No fake controls.
+- **Call History:**
+  - Search by number; filter by mode, status, agent and date range; pagination.
+  - CSV export (up to 10k rows) with a UTF-8 BOM, and spreadsheet-formula injection blocked. Audit-logged.
+  - A detail drawer shows info, a plain-English error, estimated cost (if calculated), AI token usage, the recording player, the transcript and an event timeline.
+- **Recordings:**
+  - Off by default. The owner switches them on in Settings → Calling.
+  - When on, AI calls are recorded on two channels (`record: true`, `recordingChannels: dual`), human calls record the whole conference, and the AI is told to announce the recording. The Dialer reminds the human to tell the other person.
+  - Recordings are saved by the `/webhooks/twilio/recording` webhook.
+  - The audio stays in Twilio and is **streamed through the authenticated API** (Range/seek supported, `Cache-Control: private, no-store`). Provider URLs and SIDs are never exposed.
+  - Deleting (admin) removes the recording in Twilio too.
+- **Transcripts:** Postgres full-text search across what was said, matching snippets, and .txt download.
+- **Settings → Calling** (owner): recording on/off, and the account-wide limit on simultaneous AI calls (1–20).
+- **Fix:** a database error after Twilio had already placed an AI call was reported as a Twilio failure, and a live call was marked failed. The Twilio request now has its own error handling.
 
 ## Phase 6: Bulk AI calling
 - **New campaign wizard:**
@@ -147,7 +165,7 @@ apps/api  (Express 5, TypeScript, zod, pg)    :4000  → deploy to Railway/Rende
 - Docs: `DEPLOYMENT.md`, `docs/TWILIO_WEBHOOKS.md`, `docs/OPENAI_REALTIME.md`
 
 ## Tests
-`npm test` — 89 passing (15 new in Phase 6: validation, limits, consent and count gate, concurrency, calling hours, outcomes, retries, completion, pause/resume/stop, permanent failures, mid-campaign DNC, account-wide limit, opt-out, contacts and DNC). Earlier: 74 (10 new in Phase 5: agents). Earlier: 64 (10 new in Phase 4: REST call creation, OpenAI-required, DNC/inactive agent, concurrency cap, Twilio refusal, bad handshake signature, bad token, single-use token, the full bridge conversation, OpenAI-disconnect hang-up). Earlier: 52 (16 new in Phase 3: pre-call validation, geo/DNC blocks, idempotency, one-active-call rule, RBAC, token grants, TwiML App create/repair, forged/unsigned webhooks, single-use call start, forward-only status, failure explanation, cancel-before-answer, hold, keypad). Earlier: 36 (16 new in Phase 2: OpenAI/Twilio save, encryption, masking, test success/failure messages, number sync, default rules, geo permissions, setup %, RBAC). Earlier suites: auth, password hashing, validation, duplicate email, session invalidation, audit log, cross-org isolation, encryption, WebSocket ticket auth, per-org event isolation, unknown WS path, health, concurrent migrations.
+`npm test` — 98 passing (9 new in Phase 7). Earlier: 89 (15 new in Phase 6: validation, limits, consent and count gate, concurrency, calling hours, outcomes, retries, completion, pause/resume/stop, permanent failures, mid-campaign DNC, account-wide limit, opt-out, contacts and DNC). Earlier: 74 (10 new in Phase 5: agents). Earlier: 64 (10 new in Phase 4: REST call creation, OpenAI-required, DNC/inactive agent, concurrency cap, Twilio refusal, bad handshake signature, bad token, single-use token, the full bridge conversation, OpenAI-disconnect hang-up). Earlier: 52 (16 new in Phase 3: pre-call validation, geo/DNC blocks, idempotency, one-active-call rule, RBAC, token grants, TwiML App create/repair, forged/unsigned webhooks, single-use call start, forward-only status, failure explanation, cancel-before-answer, hold, keypad). Earlier: 36 (16 new in Phase 2: OpenAI/Twilio save, encryption, masking, test success/failure messages, number sync, default rules, geo permissions, setup %, RBAC). Earlier suites: auth, password hashing, validation, duplicate email, session invalidation, audit log, cross-org isolation, encryption, WebSocket ticket auth, per-org event isolation, unknown WS path, health, concurrent migrations.
 The production build was also checked locally: `migrate.js` then `index.js` then `worker.js` ran with NODE_ENV=production; health reported all OK; SIGTERM shut both down cleanly. `verify-deployment.mjs` passed against the local stack.
 Web: `tsc`, `eslint`, and `next build` all pass. Manual smoke test through the web proxy passed.
 

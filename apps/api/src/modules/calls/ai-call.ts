@@ -71,8 +71,9 @@ export async function placeAiCall(input: PlaceAiCallInput) {
 
   const { rows } = await query(
     `INSERT INTO calls (org_id, user_id, mode, from_number, to_number, to_country_iso, status, ai_agent_id, idempotency_key,
-                        campaign_id, campaign_contact_id, metadata)
-     VALUES ($1,$2,'ai',$3,$4,$5,'initiated',$6,$7,$8,$9,$10)
+                        campaign_id, campaign_contact_id, metadata, recording_enabled)
+     VALUES ($1,$2,'ai',$3,$4,$5,'initiated',$6,$7,$8,$9,$10,
+             coalesce((SELECT recording_enabled FROM org_settings WHERE org_id = $1), false))
      ON CONFLICT (org_id, idempotency_key) DO NOTHING RETURNING id`,
     [orgId, input.userId, from.e164, dest.e164, dest.countryIso, agent.id, input.idempotencyKey,
      input.campaignId ?? null, input.campaignContactId ?? null,
@@ -83,8 +84,10 @@ export async function placeAiCall(input: PlaceAiCallInput) {
     return { call: await getCallView(orgId, again.rows[0].id), duplicate: true };
   }
   const callId = rows[0].id as string;
+  const recording = (await query("SELECT recording_enabled FROM calls WHERE id = $1", [callId])).rows[0].recording_enabled as boolean;
+  let twilioCall: { sid: string };
   try {
-    const call = await twilioClient(creds).calls.create({
+    twilioCall = await twilioClient(creds).calls.create({
       to: dest.e164,
       from: from.e164,
       url: publicUrl(`/webhooks/twilio/voice/ai?callId=${callId}`),
@@ -94,8 +97,16 @@ export async function placeAiCall(input: PlaceAiCallInput) {
       statusCallbackEvent: ["initiated", "ringing", "answered", "completed"],
       timeout: 30,
       timeLimit: agent.max_call_duration_sec + 30, // hard backstop; the bridge ends the call at the agent's limit
+      ...(recording
+        ? {
+            record: true,
+            recordingChannels: "dual", // caller and AI on separate channels
+            recordingStatusCallback: publicUrl(`/webhooks/twilio/recording?callId=${callId}`),
+            recordingStatusCallbackMethod: "POST",
+            recordingStatusCallbackEvent: ["completed"],
+          }
+        : {}),
     });
-    await query("UPDATE calls SET provider_call_sid = $2, status = 'queued', updated_at = now() WHERE id = $1", [callId, call.sid]);
   } catch (err) {
     const e = explainCallError(err);
     await query(
@@ -104,6 +115,8 @@ export async function placeAiCall(input: PlaceAiCallInput) {
     );
     throw Object.assign(badRequest(e.message), { callId });
   }
+  // Outside the try: a database problem here must not be reported as a Twilio failure (the call is already placed).
+  await query("UPDATE calls SET provider_call_sid = $2, status = 'queued', updated_at = now() WHERE id = $1", [callId, twilioCall.sid]);
   await logCallEvent(orgId, callId, "call.prepared", { to: dest.e164, from: from.e164, agentId: agent.id, campaignId: input.campaignId ?? null });
   return { call: await getCallView(orgId, callId), duplicate: false };
 }

@@ -65,8 +65,8 @@ router.post("/human", requirePermission("calls:make"), callLimiter, async (req, 
   if (active.rowCount) throw conflict("You already have a call in progress. Hang up first.");
 
   const { rows } = await query(
-    `INSERT INTO calls (org_id, user_id, mode, from_number, to_number, to_country_iso, status, idempotency_key, metadata)
-     VALUES ($1,$2,'human',$3,$4,$5,'initiated',$6,$7)
+    `INSERT INTO calls (org_id, user_id, mode, from_number, to_number, to_country_iso, status, idempotency_key, metadata, recording_enabled)
+     VALUES ($1,$2,'human',$3,$4,$5,'initiated',$6,$7, coalesce((SELECT recording_enabled FROM org_settings WHERE org_id = $1), false))
      ON CONFLICT (org_id, idempotency_key) DO NOTHING RETURNING id`,
     [orgId, req.user!.id, from.e164, dest.e164, dest.countryIso, body.idempotencyKey, { fromNumberId: from.id }],
   );
@@ -145,6 +145,23 @@ router.post("/:id/hold", requirePermission("calls:make"), async (req, res) => {
   await setCallMetadata(orgId, call.id, { onHold: hold });
   await logCallEvent(orgId, call.id, hold ? "call.hold" : "call.unhold", {});
   res.json({ ok: true, onHold: hold });
+});
+
+/** Live Calls page: mute the browser user's microphone in the conference (human calls). */
+router.post("/:id/mute", requirePermission("calls:make"), async (req, res) => {
+  const { muted } = z.object({ muted: z.boolean() }).parse(req.body);
+  const orgId = req.user!.orgId;
+  const call = await loadOwnCall(orgId, String(req.params.id));
+  if (call.mode !== "human") throw badRequest("AI calls are run by the server; there's no microphone to mute.");
+  if (call.status !== "in_progress" || !call.metadata?.browserCallSid) throw badRequest("Mute works once the call is connected.");
+  const creds = (await twilioCredsFor(orgId))!;
+  try {
+    await twilioClient(creds).conferences(conferenceName(call.id)).participants(call.metadata.browserCallSid).update({ muted });
+  } catch (err: any) {
+    throw badRequest(err?.status === 404 ? "The call has already ended." : explainCallError(err).message);
+  }
+  await setCallMetadata(orgId, call.id, { agentMuted: muted });
+  res.json({ ok: true, muted });
 });
 
 /**
