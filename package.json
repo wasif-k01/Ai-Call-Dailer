@@ -1,0 +1,25 @@
+{
+  "name": "ai-cloud-calling-platform",
+  "private": true,
+  "workspaces": [
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspaces --if-present",
+    "dev:api": "npm run dev -w @acp/api",
+    "dev:web": "npm run dev -w @acp/web",
+    "build": "npm run build -w @acp/api && npm run build -w @acp/web",
+    "test": "npm test -w @acp/api",
+    "migrate": "npm run migrate -w @acp/api",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "dev:worker": "npm run dev:worker -w @acp/api",
+    "railway:plan": "railway config plan",
+    "railway:apply": "railway config apply"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "devDependencies": {
+    "railway": "^3.17.0"
+  }
+}
