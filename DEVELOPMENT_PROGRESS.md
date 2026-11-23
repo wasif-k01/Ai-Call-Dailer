@@ -2,13 +2,13 @@
 
 _Last updated: 2026-11-23_
 
-## Current phase: Phase 2 complete (waiting for real OpenAI/Twilio credentials) → Phase 3 next
+## Current phase: Phase 3 done (real call verified) → Phase 4 next
 
 | Phase | Scope | Status |
 |---|---|---|
 | 1 | Repo inspection, architecture, project setup, database, authentication, dashboard | ✅ Done (tested) |
-| 2 | Integrations & API Settings UI, setup wizard, OpenAI + Twilio connection, phone numbers | ✅ Built and tested with mocks + real error paths; **waiting for owner's real keys** |
-| 3 | Unified Dialer + Human-to-Human calling (Twilio Voice JS SDK) | Pending |
+| 2 | Integrations & API Settings UI, setup wizard, OpenAI + Twilio connection, phone numbers | ✅ Done: owner connected real OpenAI + Twilio (full account); US number is default; geo: US/AE/GB allowed, PK blocked (owner will enable later) |
+| 3 | Unified Dialer + Human-to-Human calling (Twilio Voice JS SDK) | ✅ Real browser → UAE mobile call completed (75s) on 2026-11-23. **Hold and keypad not yet tried on a real call.** |
 | 4 | OpenAI Realtime voice + AI-to-Human calling | Pending |
 | 5 | AI Agent management | Pending |
 | 6 | Bulk campaigns, CSV/XLSX upload, BullMQ queue, DNC list | Pending |
@@ -49,6 +49,28 @@ apps/api  (Express 5, TypeScript, zod, pg)    :4000  → deploy to Railway/Rende
 - Account Settings: profile and change password
 - Health check: `GET /health` (includes a DB check)
 
+## Phase 3: Dialer and human-to-human calling
+- **Call setup:** the browser (Twilio Voice SDK 2.18.5) joins a private Twilio **Conference**, and the recipient is dialed into it through the Participants API. A conference is used because Twilio documents Hold for conferences but not for a direct `<Dial>`.
+- **Keypad:** Twilio doesn't document whether DTMF passes through conferences, so the server plays the digits straight onto the recipient's line (`<Play digits>`, then rejoins the conference). Key presses are batched (700 ms). **Must be verified on a real call** (e.g. an IVR).
+- **Pre-call checks:**
+  - number is valid and normalised to E.164
+  - the account's real Geo Permissions (cached 10 min; cleared on re-check)
+  - Do Not Call list
+  - caller ID must be a Twilio-owned or verified number
+  - one active call per user, plus an idempotency key and a 10 calls/min rate limit
+- **Browser token:** short-lived (1h), outgoing calls only, auto-refreshed. The TwiML App is created automatically and its URLs are repaired when the public URL changes (the tunnel URL changes each run).
+- **Webhooks:** `/webhooks/twilio/voice/client`, `/status`, `/client-status`, `/hold`. All check `X-Twilio-Signature` using a URL rebuilt from PUBLIC_API_URL. Each prepared call can be started once, and only by the user who prepared it. Status only moves forward, so late or duplicate webhooks are ignored.
+- **Hold:** the recipient hears a spoken "please hold" loop (built-in TwiML; no external music files).
+- **Dialer UI:**
+  - Human/AI mode switch (AI shows that it arrives in Phase 4)
+  - caller ID picker, country selector (US/AE/GB/PK first), live formatting and validation, contact search
+  - keypad: types the number when idle, sends tones during a call
+  - Call / Hang Up, Mute, Hold/Resume, timer
+  - live status over WebSocket, with polling as a fallback
+  - plain-English microphone and network errors
+- **Local testing:** `npm run dev:api:tunnel` starts a free Cloudflare quick tunnel and runs the API with PUBLIC_API_URL set to it. Checked: the verify script passes through the tunnel, and a forged webhook gets 403.
+- **Cost estimates** per call are left empty until Phase 8. Prices will not be invented.
+
 ## Phase 2 — Integrations & phone numbers
 - Integrations page with OpenAI, Twilio, Database, Redis and "Additional providers" cards. Each shows Connected / Not Connected / Testing / Configuration Error.
 - Save / Test Connection / Update / Disconnect (with a confirm step). Saving never marks a card connected; only a passing test does.
@@ -75,7 +97,7 @@ apps/api  (Express 5, TypeScript, zod, pg)    :4000  → deploy to Railway/Rende
 - Docs: `DEPLOYMENT.md`, `docs/TWILIO_WEBHOOKS.md`, `docs/OPENAI_REALTIME.md`
 
 ## Tests
-`npm test` — 36 passing (16 new in Phase 2: OpenAI/Twilio save, encryption, masking, test success/failure messages, number sync, default rules, geo permissions, setup %, RBAC). Earlier suites: auth, password hashing, validation, duplicate email, session invalidation, audit log, cross-org isolation, encryption, WebSocket ticket auth, per-org event isolation, unknown WS path, health, concurrent migrations.
+`npm test` — 52 passing (16 new in Phase 3: pre-call validation, geo/DNC blocks, idempotency, one-active-call rule, RBAC, token grants, TwiML App create/repair, forged/unsigned webhooks, single-use call start, forward-only status, failure explanation, cancel-before-answer, hold, keypad). Earlier: 36 (16 new in Phase 2: OpenAI/Twilio save, encryption, masking, test success/failure messages, number sync, default rules, geo permissions, setup %, RBAC). Earlier suites: auth, password hashing, validation, duplicate email, session invalidation, audit log, cross-org isolation, encryption, WebSocket ticket auth, per-org event isolation, unknown WS path, health, concurrent migrations.
 The production build was also checked locally: `migrate.js` then `index.js` then `worker.js` ran with NODE_ENV=production; health reported all OK; SIGTERM shut both down cleanly. `verify-deployment.mjs` passed against the local stack.
 Web: `tsc`, `eslint`, and `next build` all pass. Manual smoke test through the web proxy passed.
 
@@ -90,6 +112,9 @@ Web: `tsc`, `eslint`, and `next build` all pass. Manual smoke test through the w
 | Hosted Redis | 9 | Not needed yet (local Redis) |
 
 ## Known issues / notes
+- **Fixed 2026-11-23:** the Twilio test read the Account resource with the API key. Standard keys get error 70004 there, so valid keys were reported as "rejected". It now checks the key by listing TwiML Apps.
+- **Fixed:** saving an API key no longer resets the "countries checked" wizard step.
+- Not yet verified on a real call: Hold (spoken hold loop) and keypad tones (server-side `<Play digits>`).
 - WebSocket paths for Twilio media (`/twilio/media-stream`) and the Twilio webhooks are designed but not built (Phases 3–4).
 - Behind the Vercel proxy, `req.ip` may be Vercel's IP. This needs checking after the first deploy; `TRUST_PROXY_HOPS=2` may be needed (see DEPLOYMENT.md).
 - `railway config plan` hasn't been run yet, because it needs the owner's Railway login. The IaC file typechecks and evaluates locally to `redis`, `api`, `worker`.

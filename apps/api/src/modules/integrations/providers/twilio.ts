@@ -39,6 +39,15 @@ export async function fetchAccount(c: TwilioCreds): Promise<TwilioAccountInfo> {
   return { friendlyName: acct.friendlyName, status: acct.status, type: acct.type };
 }
 
+/**
+ * Checks an API Key SID/Secret pair. Standard API keys are not allowed to read the Account
+ * resource (Twilio error 70004), so this lists TwiML Apps, which a Standard key can access
+ * and which browser calling needs anyway.
+ */
+export async function verifyApiKey(c: TwilioCreds): Promise<void> {
+  await twilioClient(c).applications.list({ limit: 1 });
+}
+
 export interface ProviderNumber {
   e164: string;
   providerSid: string;

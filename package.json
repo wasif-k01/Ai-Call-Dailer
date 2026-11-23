@@ -14,7 +14,8 @@
     "typecheck": "npm run typecheck --workspaces --if-present",
     "dev:worker": "npm run dev:worker -w @acp/api",
     "railway:plan": "railway config plan",
-    "railway:apply": "railway config apply"
+    "railway:apply": "railway config apply",
+    "dev:api:tunnel": "node scripts/dev-tunnel.mjs"
   },
   "engines": {
     "node": ">=22"

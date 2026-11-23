@@ -7,7 +7,7 @@ import { redisHealthy } from "../../lib/redis.js";
 import { requireAuth, requirePermission } from "../../middleware/auth.js";
 import { audit } from "../audit/service.js";
 import { REALTIME_MODELS, testOpenAI, VOICES } from "./providers/openai.js";
-import { explainTwilioError, fetchAccount } from "./providers/twilio.js";
+import { explainTwilioError, fetchAccount, verifyApiKey } from "./providers/twilio.js";
 import {
   clearSetupSteps, disconnect, getIntegration, getSecrets, markSetupStep, mergeConfig, saveIntegration, setStatus, twilioCredsFor, type Provider,
 } from "./store.js";
@@ -109,7 +109,8 @@ router.put("/twilio", async (req, res) => {
     { accountSid: body.accountSid, apiKeySid: body.apiKeySid || null, twimlAppSid: body.twimlAppSid || null },
     { auth_token: body.authToken || undefined, api_key_secret: body.apiKeySid === "" ? "" : body.apiKeySecret || undefined },
   );
-  await clearSetupSteps(orgId, ["geo_permissions"]);
+  // Only a different Twilio account invalidates the countries check (adding an API key doesn't).
+  if (existing?.config.accountSid !== body.accountSid) await clearSetupSteps(orgId, ["geo_permissions"]);
   await audit(req, "integration.twilio.saved", { metadata: { tokenChanged: !!body.authToken } });
   res.json({ ok: true, integration: await getIntegration(orgId, "twilio") });
 });
@@ -125,9 +126,13 @@ router.post("/twilio/test", async (req, res) => {
     if (account.status !== "active") throw Object.assign(new Error(`account status is ${account.status}`), { code: 20005 });
     if (creds.apiKeySid && creds.apiKeySecret) {
       try {
-        await fetchAccount(creds);
-      } catch {
-        throw new Error("The Auth Token works, but the API Key SID / Secret were rejected. Re-create the API key in Twilio and enter both values again.");
+        await verifyApiKey(creds);
+      } catch (err: any) {
+        throw new Error(
+          err?.status === 401 && err?.code === 20003
+            ? "The Auth Token works, but the API Key SID / Secret were rejected. Check both were copied completely, and that the key was created in the United States (US1) region."
+            : `The Auth Token works, but the API key check failed: ${explainTwilioError(err)}`,
+        );
       }
     }
     const numbers = await syncTwilioNumbers(orgId, creds);

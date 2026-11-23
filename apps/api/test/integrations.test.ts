@@ -7,7 +7,7 @@ vi.mock("../src/modules/integrations/providers/twilio.js", async (orig) => {
   const actual = await orig<typeof import("../src/modules/integrations/providers/twilio.js")>();
   return {
     ...actual,
-    fetchAccount: vi.fn(),
+    fetchAccount: vi.fn(), verifyApiKey: vi.fn(async () => {}),
     fetchNumbers: vi.fn(),
     fetchGeoPermissions: vi.fn(),
   };
@@ -207,5 +207,29 @@ describe("setup wizard", () => {
     expect(res.body.percent).toBe(0);
     expect(res.body.steps).toHaveLength(8);
     expect(res.body.steps.find((s: any) => s.key === "test_ai_call").status).toBe("not_available_yet");
+  });
+});
+
+describe("Twilio API key check", () => {
+  it("validates Standard API keys without touching the Account resource (Twilio 70004)", async () => {
+    const { agent } = await signUp();
+    vi.mocked(tw.fetchAccount).mockResolvedValue({ friendlyName: "Acct", status: "active", type: "Full" });
+    vi.mocked(tw.fetchNumbers).mockResolvedValue([]);
+    await agent.put("/api/integrations/twilio").send({ accountSid: SID, authToken: TOKEN, apiKeySid: "SK" + "4".repeat(32), apiKeySecret: "x".repeat(32) });
+    const res = await agent.post("/api/integrations/twilio/test");
+    expect(res.body.ok).toBe(true);
+    expect(tw.verifyApiKey).toHaveBeenCalledWith(expect.objectContaining({ apiKeySid: "SK" + "4".repeat(32) }));
+    // the Account resource is only ever read with the Auth Token
+    for (const [creds] of vi.mocked(tw.fetchAccount).mock.calls) expect(creds.apiKeySid).toBeUndefined();
+  });
+
+  it("explains a rejected API key", async () => {
+    const { agent } = await signUp();
+    vi.mocked(tw.fetchAccount).mockResolvedValue({ friendlyName: "Acct", status: "active", type: "Full" });
+    vi.mocked(tw.verifyApiKey).mockRejectedValueOnce(Object.assign(new Error("Authenticate"), { status: 401, code: 20003 }));
+    await agent.put("/api/integrations/twilio").send({ accountSid: SID, authToken: TOKEN, apiKeySid: "SK" + "4".repeat(32), apiKeySecret: "x".repeat(32) });
+    const res = await agent.post("/api/integrations/twilio/test");
+    expect(res.body.ok).toBe(false);
+    expect(res.body.message).toMatch(/API Key SID \/ Secret were rejected/);
   });
 });

@@ -6,3 +6,4 @@ process.env.CREDENTIALS_ENCRYPTION_KEY = Buffer.alloc(32, 7).toString("base64");
 process.env.ALLOW_SIGNUP = "true";
 process.env.REDIS_URL = process.env.TEST_REDIS_URL ?? "redis://127.0.0.1:6379/15";
 process.env.RUN_MIGRATIONS_ON_START = "false";
+process.env.PUBLIC_API_URL = "https://api.test.example";

@@ -8,6 +8,7 @@ import { audit } from "../audit/service.js";
 import { explainTwilioError, fetchGeoPermissions } from "../integrations/providers/twilio.js";
 import { markSetupStep, twilioCredsFor } from "../integrations/store.js";
 import { syncTwilioNumbers } from "./service.js";
+import { clearGeoCache } from "../calls/destination.js";
 
 const router = Router();
 router.use(requireAuth);
@@ -117,6 +118,7 @@ router.get("/destinations", requirePermission("calls:view"), async (req, res) =>
   const creds = await twilioCredsFor(orgId);
   if (!creds) throw badRequest("Connect Twilio first (Integrations & API Settings).");
   try {
+    await clearGeoCache(orgId); // a fresh check should immediately affect the dialer
     const permissions = await fetchGeoPermissions(creds, countries);
     await markSetupStep(orgId, "geo_permissions", {
       enabled: permissions.filter((p) => p.lowRiskNumbersEnabled).map((p) => p.isoCode),
