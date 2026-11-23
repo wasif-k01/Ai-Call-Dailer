@@ -2,7 +2,7 @@
 
 _Last updated: 2026-11-23_
 
-## Current phase: Phase 8 done → Phase 9 (production deployment & end-to-end testing) next. Still pending: a real campaign test and a real recording test.
+## Current phase: Phase 9: deployed to production; owner setup and live end-to-end call tests in progress
 
 | Phase | Scope | Status |
 |---|---|---|
@@ -14,7 +14,7 @@ _Last updated: 2026-11-23_
 | 6 | Bulk campaigns, CSV/XLSX upload, BullMQ queue, DNC list | 🟡 Built; 15 engine/API tests pass with mocked Twilio; **owner hasn't run a real campaign yet** |
 | 7 | Live Calls, Call History, Recordings, Transcripts | ✅ Built; 9 tests; checked against real call data (9 calls, 8 transcripts). **Recording not yet tried on a real call** (off by default). |
 | 8 | Usage & cost tracking, security hardening | ✅ Done: 13 tests; checked against real Twilio usage records and real OpenAI token data; see SECURITY.md |
-| 9 | Production deployment + end-to-end testing | 🟡 Configs, docs and infrastructure code ready; **not deployed** (waiting for approval) |
+| 9 | Production deployment + end-to-end testing | 🟡 **Deployed 2026-11-24**: all automated live checks pass. Pending: owner account, integrations in prod, live call tests |
 
 ## Repository inspection (Phase 1)
 The repository was empty (no commits), with the remote `wasif-k01/Ai-Call-Dailer`. There was no existing code, so the recommended stack was used.
@@ -221,5 +221,21 @@ Web: `tsc`, `eslint`, and `next build` all pass. Manual smoke test through the w
 - Supabase Auth is not used. The backend runs its own auth, so the database works on any Postgres, including Supabase.
 - Sign-ups are open in dev (`ALLOW_SIGNUP=true`). Set it to `false` after creating the owner account.
 
-## Deployment status
-Not deployed. Follow DEPLOYMENT.md; every deploy step needs owner approval.
+## Deployment status (2026-11-24)
+| Component | Where | Status |
+|---|---|---|
+| Website | Vercel: https://ai-call-dailer.vercel.app (root `apps/web`, `API_URL` set) | ✅ live |
+| API + WebSockets | Railway project `abundant-renewal`, service `api`: https://api-production-a974bf1a.up.railway.app | ✅ live, migrations 001–004 applied |
+| Worker | Railway service `worker` | ✅ running (heartbeat OK) |
+| Redis | Railway service `redis` | ✅ running |
+| Database | Supabase, region **ap-southeast-1 (Singapore)**, session pooler | ✅ connected |
+
+- `verify-deployment.mjs --api … --web …`: all checks pass.
+- **Railway setup:** applied from `.railway/railway.ts` with the owner's approval. This replaced two empty services Railway had auto-created (`@acp/api`, which had crashed, and `@acp/web`).
+- **Secrets:** JWT_SECRET and CREDENTIALS_ENCRYPTION_KEY were generated fresh and written to Railway via stdin; they were never displayed.
+- **Fix found while deploying:** empty environment variables (Railway references to unset variables) crashed the worker. They're now treated as unset (`fd700ac`).
+- **Owner TODO (security):**
+  - Revoke the Supabase secret API key and reset the database password, because both were shared in chat. Then update `DATABASE_URL` in Railway.
+  - Set `ALLOW_SIGNUP=false` after the owner account exists.
+  - Back up CREDENTIALS_ENCRYPTION_KEY.
+- **Latency note:** the database is in Singapore while Railway and Twilio are in the US. Call audio doesn't touch the database, but webhooks and page loads pay roughly 200 ms more per query.
