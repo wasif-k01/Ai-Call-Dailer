@@ -30,6 +30,7 @@ interface DashboardData {
   stats: Stats;
   recentActivity: RecentCall[];
   integrations: { provider: string; status: string }[];
+  spend: { limit_usd: number | null; spent: number; pct: number | null; overThreshold: boolean; overLimit: boolean; action: string };
 }
 
 const statusTone = (s: string) =>
@@ -57,12 +58,23 @@ export default function DashboardPage() {
     { label: "AI Calls", value: s.ai_calls, icon: Sparkles },
     { label: "Total Call Duration", value: formatDuration(s.total_duration_sec), icon: Clock },
     { label: "Total AI Usage", value: formatDuration(s.ai_usage_seconds), icon: Bot },
-    { label: "Estimated Calling Cost", value: formatUsd(s.estimated_cost_usd), icon: DollarSign, note: "Estimate — not a provider bill" },
+    { label: "Estimated Calling Cost", value: formatUsd(s.estimated_cost_usd), icon: DollarSign, note: "Twilio billed + OpenAI estimate" },
   ];
 
   return (
     <>
       <PageHeader title="Dashboard" description="An overview of your calling activity." />
+
+      {data.spend.overThreshold && (
+        <div className="mb-6">
+          <Alert tone={data.spend.overLimit ? "danger" : "warning"}>
+            {data.spend.overLimit
+              ? `This month's spending limit is reached: ${formatUsd(data.spend.spent)} of ${formatUsd(data.spend.limit_usd)}.${data.spend.action === "block" ? " New AI calls are blocked and campaigns are paused." : ""}`
+              : `This month's spending is at ${data.spend.pct}% of your ${formatUsd(data.spend.limit_usd)} limit.`}{" "}
+            <Link className="underline" href="/usage">See Usage &amp; Costs</Link>
+          </Alert>
+        </div>
+      )}
 
       {(!connected("twilio") || !connected("openai")) && (
         <Card className="mb-6 flex flex-wrap items-center justify-between gap-4 border-primary/30 bg-primary/5">

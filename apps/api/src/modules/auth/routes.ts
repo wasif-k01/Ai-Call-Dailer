@@ -8,6 +8,11 @@ import { query, withTransaction } from "../../db/pool.js";
 import { badRequest, conflict, forbidden, unauthorized } from "../../lib/errors.js";
 import { requireAuth, SESSION_COOKIE, signSession } from "../../middleware/auth.js";
 import { audit } from "../audit/service.js";
+import { redis } from "../../lib/redis.js";
+
+const LOCK_MAX_FAILS = 10;
+const LOCK_WINDOW_SEC = 15 * 60;
+const failKey = (email: string) => `acp:loginfail:${email}`;
 
 const router = Router();
 
@@ -85,6 +90,12 @@ router.post("/register", authLimiter, async (req, res) => {
 
 router.post("/login", authLimiter, async (req, res) => {
   const body = LoginSchema.parse(req.body);
+  // Lock the account (not just the IP) after repeated failures: stops slow, distributed guessing.
+  const fails = Number(await redis().get(failKey(body.email)).catch(() => 0)) || 0;
+  if (fails >= LOCK_MAX_FAILS) {
+    await audit(req, "auth.login_locked", { metadata: { email: body.email } });
+    throw forbidden("Too many failed sign-in attempts for this account. Wait 15 minutes and try again.");
+  }
   const { rows } = await query(
     "SELECT id, org_id, password_hash, is_active, token_version FROM users WHERE lower(email) = $1",
     [body.email],
@@ -93,10 +104,12 @@ router.post("/login", authLimiter, async (req, res) => {
   // Compare against a dummy hash when the user does not exist to keep timing uniform.
   const ok = await bcrypt.compare(body.password, u?.password_hash ?? "$2b$12$invalidinvalidinvalidinvalidinvalidinvalidinvalidinva");
   if (!u || !ok) {
+    await redis().multi().incr(failKey(body.email)).expire(failKey(body.email), LOCK_WINDOW_SEC).exec().catch(() => {});
     await audit(req, "auth.login_failed", { metadata: { email: body.email } });
     throw unauthorized("Incorrect email or password.");
   }
   if (!u.is_active) throw forbidden("This account has been disabled.");
+  await redis().del(failKey(body.email)).catch(() => {});
   await query("UPDATE users SET last_login_at = now() WHERE id = $1", [u.id]);
   setSessionCookie(res, signSession(u.id, u.token_version));
   await audit(req, "auth.login", { orgId: u.org_id, userId: u.id });

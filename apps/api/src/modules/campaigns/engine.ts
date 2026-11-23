@@ -2,6 +2,7 @@ import { query, withTransaction } from "../../db/pool.js";
 import { logger } from "../../lib/logger.js";
 import { publishEvent } from "../../realtime/events.js";
 import { CapacityError, placeAiCall } from "../calls/ai-call.js";
+import { spendBlocked } from "../usage/costs.js";
 
 /**
  * Campaign engine. Runs inside the worker:
@@ -68,6 +69,15 @@ export async function runCampaignTick(enqueue: Enqueue, now = new Date()) {
 }
 
 async function tickCampaign(campaignId: string, orgId: string, enqueue: Enqueue, now: Date) {
+  const blocked = await spendBlocked(orgId);
+  if (blocked) {
+    const { rowCount } = await query("UPDATE campaigns SET status = 'paused', updated_at = now() WHERE id = $1 AND status = 'running'", [campaignId]);
+    if (rowCount) {
+      await campaignLog(orgId, campaignId, "warn", `Paused automatically: this month's spending limit ($${blocked.limit_usd}) has been reached.`);
+      await publishProgress(orgId, campaignId);
+    }
+    return;
+  }
   // Safety net: contacts still "calling" whose call already finished (e.g. a missed webhook).
   const stale = await query(
     `SELECT cc.last_call_id FROM campaign_contacts cc JOIN calls k ON k.id = cc.last_call_id

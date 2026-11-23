@@ -46,7 +46,7 @@ function buildWhere(orgId: string, f: z.infer<typeof Filters>) {
 }
 
 const LIST_COLS = `c.id, c.mode, c.status, c.direction, c.from_number, c.to_number, c.to_country_iso, c.started_at, c.answered_at, c.ended_at,
-  c.duration_sec, c.error_code, c.error_message, c.estimated_cost_usd::float, c.actual_cost_usd::float, c.recording_enabled,
+  c.duration_sec, c.error_code, c.error_message, c.estimated_cost_usd::float, c.actual_cost_usd::float, c.ai_cost_usd::float, c.cost_status, c.recording_enabled,
   a.name AS agent_name, cp.name AS campaign_name, u.full_name AS user_name,
   (SELECT count(*)::int FROM call_recordings r WHERE r.call_id = c.id AND r.status = 'completed') AS recording_count,
   (SELECT count(*)::int FROM call_transcripts t WHERE t.call_id = c.id) AS transcript_count`;

@@ -7,6 +7,7 @@ import { assertPublicUrl, publicUrl } from "../voice/twiml-app.js";
 import { assertCountryAllowed, assertNotOnDnc, normalizeNumber, resolveCallerId } from "./destination.js";
 import { getCallView, logCallEvent } from "./service.js";
 import { explainCallError } from "./twilio-errors.js";
+import { spendBlocked } from "../usage/costs.js";
 
 export interface PlaceAiCallInput {
   orgId: string;
@@ -43,6 +44,10 @@ export async function placeAiCall(input: PlaceAiCallInput) {
   const openai = await getIntegration(orgId, "openai");
   if (openai?.status !== "connected") throw badRequest("Connect and test OpenAI first (Integrations & API Settings).");
   assertPublicUrl();
+
+  const blocked = await spendBlocked(orgId);
+  if (blocked)
+    throw badRequest(`This month's spending limit ($${blocked.limit_usd}) has been reached, so new AI calls are blocked. The owner can raise the limit on the Usage & Costs page.`);
 
   const agent = await getAgent(orgId, input.agentId);
   if (!agent) throw badRequest("That AI agent doesn't exist.");

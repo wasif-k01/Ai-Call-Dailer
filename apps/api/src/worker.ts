@@ -6,6 +6,7 @@ import { pool } from "./db/pool.js";
 import { QUEUES, WORKER_HEARTBEAT_KEY as HEARTBEAT_KEY } from "./queues/index.js";
 import { Queue } from "bullmq";
 import { dialCampaignContact, runCampaignTick } from "./modules/campaigns/engine.js";
+import { computeCallCost, sweepPendingCosts } from "./modules/usage/costs.js";
 
 /**
  * Background worker process (Railway service "worker").
@@ -26,6 +27,14 @@ async function processCampaignCall(job: Job<{ campaignContactId: string }>) {
 async function processMaintenance(job: Job) {
   if (job.name === "ping") return { ok: true, at: new Date().toISOString() };
   if (job.name === "campaign-tick") return runCampaignTick(enqueueDial);
+  if (job.name === "cost-sweep") return sweepPendingCosts();
+  if (job.name === "call-cost") {
+    // Never give up from this job: if Twilio still hasn't priced the call, the sweep continues.
+    const result = await computeCallCost(job.data.callId, { lastAttempt: false });
+    if (result === "retry" && job.attemptsMade + 1 >= (job.opts.attempts ?? 1)) return "left for sweep";
+    if (result === "retry") throw new Error("Twilio hasn't priced this call yet");
+    return result;
+  }
   throw new Error(`unknown maintenance job: ${job.name}`);
 }
 
@@ -46,6 +55,7 @@ async function main() {
   // Campaign scheduler: one tick every 5 seconds across all workers (BullMQ job scheduler).
   const maintenance = new Queue(QUEUES.maintenance, { connection: createRedis("queue-scheduler") });
   await maintenance.upsertJobScheduler("campaign-tick", { every: 5000 }, { name: "campaign-tick", opts: { removeOnComplete: true, removeOnFail: 100 } });
+  await maintenance.upsertJobScheduler("cost-sweep", { every: 30 * 60_000 }, { name: "cost-sweep", opts: { removeOnComplete: true, removeOnFail: 100 } });
 
   // The API's /health reports whether a worker has checked in recently.
   const beat = () => redis().set(HEARTBEAT_KEY, new Date().toISOString(), "EX", 60).catch(() => {});

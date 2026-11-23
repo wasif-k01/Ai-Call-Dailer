@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { query } from "../../db/pool.js";
 import { requireAuth, requirePermission } from "../../middleware/auth.js";
+import { spendStatus } from "../usage/costs.js";
 
 const router = Router();
 
@@ -16,7 +17,7 @@ router.get("/stats", requireAuth, requirePermission("calls:view"), async (req, r
          count(*) FILTER (WHERE mode = 'ai')::int                              AS ai_calls,
          count(*) FILTER (WHERE status IN ('initiated','queued','ringing','in_progress'))::int AS active_calls,
          coalesce(sum(duration_sec), 0)::int                                   AS total_duration_sec,
-         coalesce(sum(coalesce(actual_cost_usd, estimated_cost_usd)), 0)::float AS estimated_cost_usd
+         coalesce(sum(estimated_cost_usd), 0)::float AS estimated_cost_usd
        FROM calls WHERE org_id = $1`,
       [orgId],
     ),
@@ -40,6 +41,7 @@ router.get("/stats", requireAuth, requirePermission("calls:view"), async (req, r
     stats: { ...totals.rows[0], ai_usage_seconds: ai.rows[0].ai_seconds },
     recentActivity: recent.rows,
     integrations: setup.rows,
+    spend: await spendStatus(orgId),
   });
 });
 

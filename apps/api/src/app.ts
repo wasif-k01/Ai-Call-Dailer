@@ -8,6 +8,7 @@ import { env } from "./config/env.js";
 import { logger } from "./lib/logger.js";
 import { pool } from "./db/pool.js";
 import { errorHandler, notFoundHandler } from "./middleware/errors.js";
+import { rejectFormPosts } from "./middleware/csrf.js";
 import authRoutes from "./modules/auth/routes.js";
 import dashboardRoutes from "./modules/dashboard/routes.js";
 import realtimeRoutes from "./realtime/routes.js";
@@ -21,6 +22,7 @@ import agentRoutes from "./modules/agents/routes.js";
 import settingsRoutes from "./modules/settings/routes.js";
 import campaignRoutes from "./modules/campaigns/routes.js";
 import { historyRouter, recordingsRouter, transcriptsRouter } from "./modules/history/routes.js";
+import usageRoutes from "./modules/usage/routes.js";
 import twilioWebhooks from "./modules/webhooks/twilio.js";
 import { redis, redisHealthy } from "./lib/redis.js";
 import { WORKER_HEARTBEAT_KEY } from "./queues/index.js";
@@ -62,6 +64,7 @@ export function createApp() {
       legacyHeaders: false,
     }),
   );
+  api.use(rejectFormPosts);
   api.use("/auth", authRoutes);
   api.use("/dashboard", dashboardRoutes);
   api.use("/realtime", realtimeRoutes);
@@ -72,6 +75,7 @@ export function createApp() {
   api.use("/calls", callRoutes);
   api.use("/recordings", recordingsRouter);
   api.use("/transcripts", transcriptsRouter);
+  api.use("/usage", usageRoutes);
   api.use("/voice", voiceRoutes);
   api.use("/contacts", contactRoutes);
   api.use("/agents", agentRoutes);

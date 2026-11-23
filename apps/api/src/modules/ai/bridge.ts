@@ -79,7 +79,11 @@ export class AiCallBridge {
   private closed = false;
   private maxTimer: ReturnType<typeof setTimeout> | undefined;
   private closeHandlers: (() => void)[] = [];
-  private usage = { input_audio_tokens: 0, output_audio_tokens: 0, input_text_tokens: 0, output_text_tokens: 0, cached_tokens: 0 };
+  private usage = {
+    input_audio_tokens: 0, output_audio_tokens: 0, input_text_tokens: 0, output_text_tokens: 0, cached_tokens: 0,
+    transcribe_input_tokens: 0, transcribe_output_tokens: 0,
+  };
+  private model = "gpt-realtime-2.1";
 
   constructor(
     private twilioWs: WebSocket,
@@ -145,6 +149,7 @@ export class AiCallBridge {
     if (!agent || !secrets.api_key) return this.fail("start", new Error("AI agent or OpenAI key missing"));
 
     const model = String(integ?.config.model ?? "gpt-realtime-2.1");
+    this.model = model;
     await logCallEvent(this.orgId, this.callId, "ai.stream_started", { model, agentId: agent.id });
 
     this.maxTimer = setTimeout(() => void this.hangUp("max duration reached"), agent.max_call_duration_sec * 1000);
@@ -209,6 +214,11 @@ export class AiCallBridge {
       case "response.output_audio_transcript.done":
         return this.saveTranscript("ai", evt.transcript);
       case "conversation.item.input_audio_transcription.completed":
+        // Transcription is billed separately from the conversation model.
+        if (evt.usage?.type === "tokens") {
+          this.usage.transcribe_input_tokens += evt.usage.input_tokens ?? 0;
+          this.usage.transcribe_output_tokens += evt.usage.output_tokens ?? 0;
+        }
         return this.saveTranscript("caller", evt.transcript);
       case "response.done":
         return this.onResponseDone(evt.response);
@@ -317,10 +327,13 @@ export class AiCallBridge {
         await query(
           `INSERT INTO usage_records (org_id, call_id, provider, category, quantity, unit, source)
            VALUES ($1,$2,'openai',$3,$4,$5,'estimate')`,
-          [this.orgId, this.callId, unit.includes("audio") ? "ai_audio" : "ai_text", qty, unit],
+          [this.orgId, this.callId, unit.startsWith("transcribe_") ? "ai_transcription" : unit.includes("audio") ? "ai_audio" : "ai_text", qty, unit],
         );
       }
-      await query("UPDATE calls SET metadata = metadata || $2 WHERE id = $1", [this.callId, { aiUsage: this.usage, aiEndReason: reason }]);
+      await query("UPDATE calls SET metadata = metadata || $2 WHERE id = $1", [
+        this.callId,
+        { aiUsage: this.usage, aiEndReason: reason, aiModel: this.model, transcribeModel: env.OPENAI_TRANSCRIBE_MODEL },
+      ]);
     } catch (err) {
       logger.warn({ err, callId: this.callId }, "failed to store AI usage");
     }

@@ -70,6 +70,7 @@ export default function SettingsPage() {
           </Card>
         )}
         {can(session, "*") && <CallingSettings />}
+        {can(session, "*") && <AuditLog />}
         <Card>
           <h2 className="mb-4 font-semibold">Change password</h2>
           <form onSubmit={changePassword} className="space-y-4">
@@ -122,6 +123,43 @@ function CallingSettings() {
         </label>
         {msg && <Alert tone={msg.tone}>{msg.text}</Alert>}
         <Button onClick={save} loading={saving}>Save calling settings</Button>
+      </div>
+    </Card>
+  );
+}
+
+function AuditLog() {
+  const [entries, setEntries] = useState<{ action: string; entity_type: string | null; ip: string | null; created_at: string; user_name: string | null }[] | null>(null);
+  const [page, setPage] = useState(1);
+  useEffect(() => {
+    api<{ entries: NonNullable<typeof entries> }>(`/settings/audit?page=${page}`).then((r) => setEntries(r.entries)).catch(() => setEntries([]));
+  }, [page]);
+  return (
+    <Card className="lg:col-span-2">
+      <h2 className="mb-1 font-semibold">Activity log</h2>
+      <p className="mb-3 text-sm text-muted">Security-relevant actions: sign-ins, settings and integration changes, calls started, exports and deletions.</p>
+      {!entries ? null : entries.length === 0 ? (
+        <p className="text-sm text-muted">Nothing here yet.</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="text-left text-muted"><tr><th className="py-2 font-medium">When</th><th className="py-2 font-medium">Who</th><th className="py-2 font-medium">What</th><th className="py-2 font-medium">IP</th></tr></thead>
+            <tbody>
+              {entries.map((e, i) => (
+                <tr key={i} className="border-t border-border">
+                  <td className="py-1.5 whitespace-nowrap text-muted">{new Date(e.created_at).toLocaleString()}</td>
+                  <td className="py-1.5">{e.user_name ?? "System"}</td>
+                  <td className="py-1.5 font-mono text-xs">{e.action}</td>
+                  <td className="py-1.5 font-mono text-xs text-muted">{e.ip ?? ""}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      <div className="mt-3 flex gap-2">
+        <Button variant="secondary" disabled={page === 1} onClick={() => setPage(page - 1)}>Newer</Button>
+        <Button variant="secondary" disabled={!entries || entries.length < 50} onClick={() => setPage(page + 1)}>Older</Button>
       </div>
     </Card>
   );

@@ -20,6 +20,7 @@ export interface CallRow {
   error_message: string | null;
   estimated_cost_usd: number | null;
   actual_cost_usd: number | null;
+  ai_cost_usd?: number | null;
   agent_name: string | null;
   campaign_name: string | null;
   user_name: string | null;
@@ -117,7 +118,13 @@ export function CallDetailDrawer({ callId, onClose }: { callId: string; onClose:
                   <dt className="text-muted">Ended</dt><dd>{d.call.ended_at ? new Date(d.call.ended_at).toLocaleString() : "—"}</dd>
                   <dt className="text-muted">Duration</dt><dd>{d.call.duration_sec != null ? formatDuration(d.call.duration_sec) : "—"}</dd>
                   <dt className="text-muted">Estimated cost</dt>
-                  <dd>{d.call.actual_cost_usd != null ? `${formatUsd(d.call.actual_cost_usd)} (billed)` : d.call.estimated_cost_usd != null ? formatUsd(d.call.estimated_cost_usd) : "Not calculated yet"}</dd>
+                  <dd>
+                    {d.call.estimated_cost_usd != null ? formatUsd(d.call.estimated_cost_usd) : "Not calculated yet"}
+                    <span className="block text-xs text-muted">
+                      Twilio: {d.call.actual_cost_usd != null ? `${formatUsd(d.call.actual_cost_usd)} billed` : "waiting for Twilio's price"}
+                      {d.call.mode === "ai" && d.call.ai_cost_usd != null ? ` · OpenAI: ${formatUsd(d.call.ai_cost_usd)} estimated` : ""}
+                    </span>
+                  </dd>
                   {d.call.ai_usage && (<><dt className="text-muted">AI usage</dt><dd className="text-xs">{d.call.ai_usage.input_audio_tokens ?? 0} audio tokens in · {d.call.ai_usage.output_audio_tokens ?? 0} out</dd></>)}
                 </dl>
                 {d.call.error_message && <div className="mt-3"><Alert>{d.call.error_message}</Alert></div>}

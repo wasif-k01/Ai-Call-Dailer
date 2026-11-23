@@ -4,6 +4,7 @@ import { publishEvent } from "../../realtime/events.js";
 import { twilioClient } from "../integrations/providers/twilio.js";
 import { twilioCredsFor } from "../integrations/store.js";
 import { updateContactFromCall } from "../campaigns/engine.js";
+import { getMaintenanceQueue } from "../../queues/index.js";
 
 export type CallStatus = "initiated" | "queued" | "ringing" | "in_progress" | "completed" | "busy" | "no_answer" | "failed" | "canceled";
 export const TERMINAL: CallStatus[] = ["completed", "busy", "no_answer", "failed", "canceled"];
@@ -65,6 +66,16 @@ export async function transitionCall(
   );
   await emit(orgId, callId);
   await updateContactFromCall(callId).catch((err) => logger.warn({ err, callId }, "campaign contact update failed"));
+  if (TERMINAL.includes(next)) {
+    // Twilio prices a call shortly after it ends; the worker fetches it (with retries).
+    await getMaintenanceQueue()
+      .add("call-cost", { callId }, {
+        // 2 min, then backing off to ~2 h; the 30-minute sweep keeps trying for up to 7 days.
+        jobId: `cost-${callId}`, delay: 120_000, attempts: 7, backoff: { type: "exponential", delay: 120_000 },
+        removeOnComplete: true, removeOnFail: 500,
+      })
+      .catch((err) => logger.warn({ err, callId }, "couldn't schedule cost calculation"));
+  }
   return true;
 }
 

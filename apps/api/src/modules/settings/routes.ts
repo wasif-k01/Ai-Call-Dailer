@@ -14,6 +14,17 @@ router.put("/organization", requireAuth, requirePermission("*"), async (req, res
   res.json({ ok: true, name });
 });
 
+router.get("/audit", requireAuth, requirePermission("*"), async (req, res) => {
+  const { page } = z.object({ page: z.coerce.number().int().min(1).default(1) }).parse(req.query);
+  const { rows } = await query(
+    `SELECT a.action, a.entity_type, a.entity_id, a.ip, a.metadata, a.created_at, u.full_name AS user_name
+       FROM audit_logs a LEFT JOIN users u ON u.id = a.user_id
+      WHERE a.org_id = $1 ORDER BY a.id DESC LIMIT 50 OFFSET ${(page - 1) * 50}`,
+    [req.user!.orgId],
+  );
+  res.json({ entries: rows, page });
+});
+
 const OrgSettingsSchema = z.object({
   recordingEnabled: z.boolean(),
   maxConcurrentAiCalls: z.number().int().min(1).max(20),

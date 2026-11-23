@@ -2,7 +2,7 @@
 
 _Last updated: 2026-11-23_
 
-## Current phase: Phase 7 done → Phase 8 (usage, costs, security) next. Real campaign test and real recording test are still pending.
+## Current phase: Phase 8 done → Phase 9 (production deployment & end-to-end testing) next. Still pending: a real campaign test and a real recording test.
 
 | Phase | Scope | Status |
 |---|---|---|
@@ -13,7 +13,7 @@ _Last updated: 2026-11-23_
 | 5 | AI Agent management | ✅ Done: CRUD, duplicate, activate/deactivate, guarded delete, instruction preview, test-call shortcut; 10 tests |
 | 6 | Bulk campaigns, CSV/XLSX upload, BullMQ queue, DNC list | 🟡 Built; 15 engine/API tests pass with mocked Twilio; **owner hasn't run a real campaign yet** |
 | 7 | Live Calls, Call History, Recordings, Transcripts | ✅ Built; 9 tests; checked against real call data (9 calls, 8 transcripts). **Recording not yet tried on a real call** (off by default). |
-| 8 | Usage & cost tracking, security hardening | Pending |
+| 8 | Usage & cost tracking, security hardening | ✅ Done: 13 tests; checked against real Twilio usage records and real OpenAI token data; see SECURITY.md |
 | 9 | Production deployment + end-to-end testing | 🟡 Configs, docs and infrastructure code ready; **not deployed** (waiting for approval) |
 
 ## Repository inspection (Phase 1)
@@ -48,6 +48,32 @@ apps/api  (Express 5, TypeScript, zod, pg)    :4000  → deploy to Railway/Rende
 - App shell: sidebar with all 14 sections, responsive mobile menu. Unbuilt sections show an honest "not built yet" placeholder with no fake controls.
 - Account Settings: profile and change password
 - Health check: `GET /health` (includes a DB check)
+
+## Phase 8: Usage, costs and security
+- **Actual vs estimated, kept separate:**
+  - `telephony_cost_usd` / `actual_cost_usd` = the price Twilio billed for the call, summed across legs (browser + PSTN for human calls).
+  - `ai_cost_usd` = OpenAI **estimate** from response.done token usage (and transcription usage) × list prices.
+  - `estimated_cost_usd` = Twilio billed + OpenAI estimate.
+- **OpenAI prices** come from developers.openai.com/api/docs/pricing (checked 2026-11-24): gpt-realtime-2.1, gpt-realtime-2.1-mini, gpt-4o-mini-transcribe. The owner can override them on the Usage page. Unknown models are never guessed.
+- **Real-world finding:** Twilio returned `price: null` for calls more than an hour old, so its per-call price can take hours. The cost job first retries with backoff (about 2 min, rising to about 2 h). Then a **30-minute sweep** keeps checking for up to 7 days before marking a call "unavailable". Unknown prices stay NULL; they're never shown as $0.
+- **Twilio reconciliation:** "Fetch from Twilio" stores Twilio's monthly usage records (`billing_records`). These are account-wide: a real check showed `calls-outbound` $1.20 for 10 minutes, matching this platform's calls (~10.7 min), plus $2.07 of `trunking-termination` that this platform doesn't create (probably another app on the same Twilio account).
+- **Usage & Costs page:**
+  - month picker; totals (total, Twilio billed, OpenAI estimate, calls, minutes)
+  - daily cost chart (validated colours, hover tooltip, table view)
+  - breakdowns by country, call type, campaign and token type
+  - Twilio bill comparison, spending-limit settings, price table
+- **Spending limits:**
+  - monthly limit, alert threshold, and action (alert only, or block new AI calls and auto-pause campaigns)
+  - alerts are logged once per month and level, sent as a live event, and shown as a banner on the dashboard
+  - in-app only (no email provider)
+- **Security:**
+  - CSRF form-post guard
+  - per-account login lockout
+  - Content Security Policy on the web app
+  - owner audit-log viewer
+  - `npm audit` shows 0 vulnerabilities
+  - the full review, including remaining risks, is in `SECURITY.md`
+- **Known issue:** OpenAI marks `gpt-4o-mini-transcribe` as deprecated (it still works; a switch is planned).
 
 ## Phase 7: Live calls, history, recordings, transcripts
 - **Live Calls:** every active call, updated live, with a running timer and status.
@@ -165,7 +191,7 @@ apps/api  (Express 5, TypeScript, zod, pg)    :4000  → deploy to Railway/Rende
 - Docs: `DEPLOYMENT.md`, `docs/TWILIO_WEBHOOKS.md`, `docs/OPENAI_REALTIME.md`
 
 ## Tests
-`npm test` — 98 passing (9 new in Phase 7). Earlier: 89 (15 new in Phase 6: validation, limits, consent and count gate, concurrency, calling hours, outcomes, retries, completion, pause/resume/stop, permanent failures, mid-campaign DNC, account-wide limit, opt-out, contacts and DNC). Earlier: 74 (10 new in Phase 5: agents). Earlier: 64 (10 new in Phase 4: REST call creation, OpenAI-required, DNC/inactive agent, concurrency cap, Twilio refusal, bad handshake signature, bad token, single-use token, the full bridge conversation, OpenAI-disconnect hang-up). Earlier: 52 (16 new in Phase 3: pre-call validation, geo/DNC blocks, idempotency, one-active-call rule, RBAC, token grants, TwiML App create/repair, forged/unsigned webhooks, single-use call start, forward-only status, failure explanation, cancel-before-answer, hold, keypad). Earlier: 36 (16 new in Phase 2: OpenAI/Twilio save, encryption, masking, test success/failure messages, number sync, default rules, geo permissions, setup %, RBAC). Earlier suites: auth, password hashing, validation, duplicate email, session invalidation, audit log, cross-org isolation, encryption, WebSocket ticket auth, per-org event isolation, unknown WS path, health, concurrent migrations.
+`npm test` — 111 passing (13 new in Phase 8). Earlier: 98 (9 new in Phase 7). Earlier: 89 (15 new in Phase 6: validation, limits, consent and count gate, concurrency, calling hours, outcomes, retries, completion, pause/resume/stop, permanent failures, mid-campaign DNC, account-wide limit, opt-out, contacts and DNC). Earlier: 74 (10 new in Phase 5: agents). Earlier: 64 (10 new in Phase 4: REST call creation, OpenAI-required, DNC/inactive agent, concurrency cap, Twilio refusal, bad handshake signature, bad token, single-use token, the full bridge conversation, OpenAI-disconnect hang-up). Earlier: 52 (16 new in Phase 3: pre-call validation, geo/DNC blocks, idempotency, one-active-call rule, RBAC, token grants, TwiML App create/repair, forged/unsigned webhooks, single-use call start, forward-only status, failure explanation, cancel-before-answer, hold, keypad). Earlier: 36 (16 new in Phase 2: OpenAI/Twilio save, encryption, masking, test success/failure messages, number sync, default rules, geo permissions, setup %, RBAC). Earlier suites: auth, password hashing, validation, duplicate email, session invalidation, audit log, cross-org isolation, encryption, WebSocket ticket auth, per-org event isolation, unknown WS path, health, concurrent migrations.
 The production build was also checked locally: `migrate.js` then `index.js` then `worker.js` ran with NODE_ENV=production; health reported all OK; SIGTERM shut both down cleanly. `verify-deployment.mjs` passed against the local stack.
 Web: `tsc`, `eslint`, and `next build` all pass. Manual smoke test through the web proxy passed.
 

@@ -11,6 +11,9 @@ export async function resetDb() {
     `SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename NOT IN ('schema_migrations','roles')`,
   );
   await pool.query(`TRUNCATE ${rows.map((r) => `"${r.tablename}"`).join(", ")} RESTART IDENTITY CASCADE`);
+  const { redis } = await import("../src/lib/redis.js");
+  const keys = await redis().keys("acp:loginfail:*");
+  if (keys.length) await redis().del(...keys);
 }
 
 let counter = 0;
