@@ -3,12 +3,30 @@
 import { useState, type FormEvent } from "react";
 import { api, ApiError } from "@/lib/api";
 import { Alert, Button, Card, Input, PageHeader } from "@/components/ui";
-import { useSession } from "@/components/shell/session";
+import { can, useSession } from "@/components/shell/session";
 
 export default function SettingsPage() {
   const session = useSession();
   const [msg, setMsg] = useState<{ tone: "success" | "danger"; text: string } | null>(null);
   const [loading, setLoading] = useState(false);
+  const [orgMsg, setOrgMsg] = useState<{ tone: "success" | "danger"; text: string } | null>(null);
+  const [orgSaving, setOrgSaving] = useState(false);
+
+  async function renameOrg(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setOrgSaving(true);
+    setOrgMsg(null);
+    try {
+      const name = String(new FormData(e.currentTarget).get("orgName"));
+      await api("/settings/organization", { method: "PUT", json: { name } });
+      setOrgMsg({ tone: "success", text: "Saved. Reload the page to see the new name in the sidebar. Update your agents' greetings if they mention the old name." });
+    } catch (err) {
+      const fieldMsg = err instanceof ApiError ? err.fields?.[0]?.message : undefined;
+      setOrgMsg({ tone: "danger", text: fieldMsg ?? (err as Error).message });
+    } finally {
+      setOrgSaving(false);
+    }
+  }
 
   async function changePassword(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -40,6 +58,17 @@ export default function SettingsPage() {
             <div className="flex justify-between gap-4"><dt className="text-muted">Workspace</dt><dd>{session.organization.name}</dd></div>
           </dl>
         </Card>
+        {can(session, "*") && (
+          <Card>
+            <h2 className="mb-1 font-semibold">Company / workspace name</h2>
+            <p className="mb-4 text-sm text-muted">Shown in the app. New AI agents use it in their greeting.</p>
+            <form onSubmit={renameOrg} className="space-y-4">
+              {orgMsg && <Alert tone={orgMsg.tone}>{orgMsg.text}</Alert>}
+              <Input name="orgName" label="Name" required minLength={2} maxLength={100} defaultValue={session.organization.name} />
+              <Button type="submit" loading={orgSaving}>Save name</Button>
+            </form>
+          </Card>
+        )}
         <Card>
           <h2 className="mb-4 font-semibold">Change password</h2>
           <form onSubmit={changePassword} className="space-y-4">

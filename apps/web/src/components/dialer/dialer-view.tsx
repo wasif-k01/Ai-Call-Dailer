@@ -126,7 +126,10 @@ export default function DialerView({ initialMode = "human" }: { initialMode?: Mo
     api<{ agents: AgentOption[] }>("/agents")
       .then((r) => {
         setAgents(r.agents);
-        setAgentId(r.agents.find((a) => a.is_active)?.id ?? "");
+        // "Test call" on the AI Agents page links here with ?agent=<id>.
+        const wanted = new URLSearchParams(window.location.search).get("agent");
+        const pick = r.agents.find((a) => a.is_active && a.id === wanted) ?? r.agents.find((a) => a.is_active);
+        setAgentId(pick?.id ?? "");
       })
       .catch((e) => setError(e.message));
   }, [mode, agents]);

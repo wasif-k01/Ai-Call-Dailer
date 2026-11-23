@@ -1,5 +1,23 @@
 import { query } from "../../db/pool.js";
 
+export const LANGUAGES = {
+  auto: "Match the caller",
+  en: "English",
+  ar: "Arabic",
+  ur: "Urdu",
+  hi: "Hindi",
+  es: "Spanish",
+  fr: "French",
+  de: "German",
+  pt: "Portuguese",
+  it: "Italian",
+  tr: "Turkish",
+  ru: "Russian",
+  zh: "Chinese",
+  ja: "Japanese",
+  ko: "Korean",
+} as const;
+
 export interface Agent {
   id: string;
   name: string;
@@ -54,7 +72,9 @@ export function buildInstructions(agent: Agent, extra?: string | null) {
   return [
     agent.system_instructions.trim(),
     agent.conversation_style ? `Conversation style: ${agent.conversation_style}.` : "",
-    agent.language && agent.language !== "auto" ? `Default language: ${agent.language}.` : "",
+    agent.language && agent.language !== "auto"
+      ? `Speak ${LANGUAGES[agent.language as keyof typeof LANGUAGES] ?? agent.language} by default. If the person clearly prefers another language, switch to it.`
+      : "Reply in the language the person is speaking.",
     agent.conversation_rules ? `Conversation rules:\n${agent.conversation_rules.trim()}` : "",
     agent.call_ending_instructions ? `How to end calls:\n${agent.call_ending_instructions.trim()}` : "",
     extra ? `Additional instructions for this call:\n${extra.trim()}` : "",

@@ -2,7 +2,7 @@
 
 _Last updated: 2026-11-23_
 
-## Current phase: Phase 4 done (real AI call verified) → Phase 5 next
+## Current phase: Phase 5 done → Phase 6 (bulk campaigns) next
 
 | Phase | Scope | Status |
 |---|---|---|
@@ -10,7 +10,7 @@ _Last updated: 2026-11-23_
 | 2 | Integrations & API Settings UI, setup wizard, OpenAI + Twilio connection, phone numbers | ✅ Done: owner connected real OpenAI + Twilio (full account); US number is default; geo: US/AE/GB allowed, PK blocked (owner will enable later) |
 | 3 | Unified Dialer + Human-to-Human calling (Twilio Voice JS SDK) | ✅ Real browser → UAE mobile call completed (75s) on 2026-11-23. **Hold and keypad not yet tried on a real call.** |
 | 4 | OpenAI Realtime voice + AI-to-Human calling | Pending |
-| 5 | AI Agent management | Pending |
+| 5 | AI Agent management | ✅ Done: CRUD, duplicate, activate/deactivate, guarded delete, instruction preview, test-call shortcut; 10 tests |
 | 6 | Bulk campaigns, CSV/XLSX upload, BullMQ queue, DNC list | Pending |
 | 7 | Live Calls, Call History, Recordings, Transcripts | Pending |
 | 8 | Usage & cost tracking, security hardening | Pending |
@@ -48,6 +48,17 @@ apps/api  (Express 5, TypeScript, zod, pg)    :4000  → deploy to Railway/Rende
 - App shell: sidebar with all 14 sections, responsive mobile menu. Unbuilt sections show an honest "not built yet" placeholder with no fake controls.
 - Account Settings: profile and change password
 - Health check: `GET /health` (includes a DB check)
+
+## Phase 5: AI Agent management
+- **AI Agents page:** a card per agent (voice, language, style/speed, max length, calls made) with these actions:
+  - **Test call**, which opens AI Calling with that agent selected
+  - Edit, Duplicate (the copy starts inactive), Activate/Deactivate
+  - Delete, with confirmation. Delete is blocked while the agent is on a live call or used by a running/paused campaign. Past calls keep their history.
+- **Editor fields:** name, description, instructions, greeting, voice, language (14 + "Match the caller"), conversation style, speaking speed (0.5–1.5×), max call length (0.5–60 min), conversation rules, call-ending instructions, active.
+- **"What the AI is told" preview:** shows the exact instruction text sent to OpenAI, including the mandatory rules that are always added.
+- **Language:** the agent's language is given to the AI by name, and it may switch if the caller prefers another language.
+- **Validation and roles:** names must be unique per workspace (any capitalisation), and messages are plain English. Only owners/admins can edit agents; the agent role can use them.
+- **Settings:** the owner can rename the workspace. Its name appears in new agents' greetings; the first workspace was named "Ai".
 
 ## Phase 4: AI-to-Human calling
 - **Call path:** `POST /api/calls/ai` places the call through Twilio REST. When it's answered, `/webhooks/twilio/voice/ai` returns `<Connect><Stream>`, which feeds the bridge: Twilio μ-law ⇄ OpenAI Realtime (`gpt-realtime-2.1`, `audio/pcmu` both ways, so no re-encoding).
@@ -109,7 +120,7 @@ apps/api  (Express 5, TypeScript, zod, pg)    :4000  → deploy to Railway/Rende
 - Docs: `DEPLOYMENT.md`, `docs/TWILIO_WEBHOOKS.md`, `docs/OPENAI_REALTIME.md`
 
 ## Tests
-`npm test` — 64 passing (10 new in Phase 4: REST call creation, OpenAI-required, DNC/inactive agent, concurrency cap, Twilio refusal, bad handshake signature, bad token, single-use token, the full bridge conversation, OpenAI-disconnect hang-up). Earlier: 52 (16 new in Phase 3: pre-call validation, geo/DNC blocks, idempotency, one-active-call rule, RBAC, token grants, TwiML App create/repair, forged/unsigned webhooks, single-use call start, forward-only status, failure explanation, cancel-before-answer, hold, keypad). Earlier: 36 (16 new in Phase 2: OpenAI/Twilio save, encryption, masking, test success/failure messages, number sync, default rules, geo permissions, setup %, RBAC). Earlier suites: auth, password hashing, validation, duplicate email, session invalidation, audit log, cross-org isolation, encryption, WebSocket ticket auth, per-org event isolation, unknown WS path, health, concurrent migrations.
+`npm test` — 74 passing (10 new in Phase 5: agents). Earlier: 64 (10 new in Phase 4: REST call creation, OpenAI-required, DNC/inactive agent, concurrency cap, Twilio refusal, bad handshake signature, bad token, single-use token, the full bridge conversation, OpenAI-disconnect hang-up). Earlier: 52 (16 new in Phase 3: pre-call validation, geo/DNC blocks, idempotency, one-active-call rule, RBAC, token grants, TwiML App create/repair, forged/unsigned webhooks, single-use call start, forward-only status, failure explanation, cancel-before-answer, hold, keypad). Earlier: 36 (16 new in Phase 2: OpenAI/Twilio save, encryption, masking, test success/failure messages, number sync, default rules, geo permissions, setup %, RBAC). Earlier suites: auth, password hashing, validation, duplicate email, session invalidation, audit log, cross-org isolation, encryption, WebSocket ticket auth, per-org event isolation, unknown WS path, health, concurrent migrations.
 The production build was also checked locally: `migrate.js` then `index.js` then `worker.js` ran with NODE_ENV=production; health reported all OK; SIGTERM shut both down cleanly. `verify-deployment.mjs` passed against the local stack.
 Web: `tsc`, `eslint`, and `next build` all pass. Manual smoke test through the web proxy passed.
 
@@ -127,7 +138,8 @@ Web: `tsc`, `eslint`, and `next build` all pass. Manual smoke test through the w
 - **From the first real AI call, fixed:**
   - The AI greeted twice: the pick-up "hello" triggered a reply. Replies now stay off until the greeting has played.
   - It said "I'm an AI assistant" in every reply. It now says it once, in the greeting, and again only if asked.
-- **Open, from the first real AI call:** the caller said the AI's "voice is breaking". The cause is unconfirmed. Likely suspects: short sounds ("mhm", noise) counting as interruptions, or audio being routed via the Mac and Cloudflare tunnel instead of a server near Twilio. Interruptions are now logged (`ai.interrupted`, with how much audio was heard) so the next test can tell them apart.
+- **Follow-up, from later test calls:** interruption logs showed only 1–3 interruptions per call, so short sounds/noise are unlikely to be the cause. The main suspect is the audio route via the Mac and Cloudflare tunnel; re-check after deploying to Railway.
+- **Original report, from the first real AI call:** the caller said the AI's "voice is breaking". The cause is unconfirmed. Likely suspects: short sounds ("mhm", noise) counting as interruptions, or audio being routed via the Mac and Cloudflare tunnel instead of a server near Twilio. Interruptions are now logged (`ai.interrupted`, with how much audio was heard) so the next test can tell them apart.
 - The greeting says "on behalf of Ai" because the workspace is named "Ai". This can be edited in AI Agents (Phase 5).
 - **Fixed 2026-11-23:** the Twilio test read the Account resource with the API key. Standard keys get error 70004 there, so valid keys were reported as "rejected". It now checks the key by listing TwiML Apps.
 - **Fixed:** saving an API key no longer resets the "countries checked" wizard step.

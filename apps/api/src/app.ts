@@ -18,6 +18,7 @@ import callRoutes from "./modules/calls/routes.js";
 import voiceRoutes from "./modules/voice/routes.js";
 import contactRoutes from "./modules/contacts/routes.js";
 import agentRoutes from "./modules/agents/routes.js";
+import settingsRoutes from "./modules/settings/routes.js";
 import twilioWebhooks from "./modules/webhooks/twilio.js";
 import { redis, redisHealthy } from "./lib/redis.js";
 import { WORKER_HEARTBEAT_KEY } from "./queues/index.js";
@@ -69,6 +70,7 @@ export function createApp() {
   api.use("/voice", voiceRoutes);
   api.use("/contacts", contactRoutes);
   api.use("/agents", agentRoutes);
+  api.use("/settings", settingsRoutes);
   app.use("/api", api);
   // Provider webhooks: called by Twilio directly (never via the Vercel proxy), signature-verified.
   app.use("/webhooks/twilio", twilioWebhooks);
