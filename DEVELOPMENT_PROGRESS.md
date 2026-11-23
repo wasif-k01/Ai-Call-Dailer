@@ -2,12 +2,12 @@
 
 _Last updated: 2026-11-23_
 
-## Current phase: Phase 1 complete + production deployment prepared (not deployed) → Phase 2 next
+## Current phase: Phase 2 complete (waiting for real OpenAI/Twilio credentials) → Phase 3 next
 
 | Phase | Scope | Status |
 |---|---|---|
 | 1 | Repo inspection, architecture, project setup, database, authentication, dashboard | ✅ Done (tested) |
-| 2 | Integrations & API Settings UI, setup wizard, OpenAI + Twilio connection, phone numbers | ⏳ Next |
+| 2 | Integrations & API Settings UI, setup wizard, OpenAI + Twilio connection, phone numbers | ✅ Built and tested with mocks + real error paths; **waiting for owner's real keys** |
 | 3 | Unified Dialer + Human-to-Human calling (Twilio Voice JS SDK) | Pending |
 | 4 | OpenAI Realtime voice + AI-to-Human calling | Pending |
 | 5 | AI Agent management | Pending |
@@ -49,6 +49,18 @@ apps/api  (Express 5, TypeScript, zod, pg)    :4000  → deploy to Railway/Rende
 - Account Settings: profile and change password
 - Health check: `GET /health` (includes a DB check)
 
+## Phase 2 — Integrations & phone numbers
+- Integrations page with OpenAI, Twilio, Database, Redis and "Additional providers" cards. Each shows Connected / Not Connected / Testing / Configuration Error.
+- Save / Test Connection / Update / Disconnect (with a confirm step). Saving never marks a card connected; only a passing test does.
+- Secrets are AES-256-GCM encrypted in `encrypted_credentials`. The browser only ever gets `••••last4`. Leaving a field empty keeps the saved value. Disconnecting deletes the credentials.
+- Format validation: `sk-…`, `AC`+32 hex, 32-hex auth token, `SK…`, `AP…`, `proj_…`
+- OpenAI test: `GET /v1/models/{model}` and lists the realtime models the key can use. Errors (bad key, no credit, no model access, rate limit, outage) are explained in plain English.
+- Twilio test: fetches the account (status, Trial/Full) with the Auth Token, checks the API key separately if one is set, then syncs numbers automatically.
+- Phone numbers: syncs Twilio-owned numbers and verified caller IDs. The default is the first US Twilio voice number. Numbers missing from Twilio are marked "released". Users can make another number default, or add external numbers / SIP endpoints, which can't be used as caller ID. The four number types are kept separate.
+- Calling destinations: real Twilio Voice Geo Permissions check per country. Shows a warning for trial accounts.
+- Setup wizard: 8 steps with what / where / why / how to check, and a completion %. Steps are only marked verified from real data. Steps for Phases 3, 4 and 6 show "Available after phase N".
+- Only owner/admin can manage integrations and numbers (RBAC). Every action is audit-logged.
+
 ## Production deployment preparation (done early, at owner's request)
 - `.railway/railway.ts` uses Railway Infrastructure as Code with services `api` and `worker` and a `redis` database. Secrets use `preserve()` and are never stored in git. The old `railway.json` format is deprecated and stops being read on 2026-12-01.
 - `apps/web/vercel.json` and `next.config.ts`: monorepo install, security headers, and the build refuses to run in production without an https `API_URL`.
@@ -63,15 +75,15 @@ apps/api  (Express 5, TypeScript, zod, pg)    :4000  → deploy to Railway/Rende
 - Docs: `DEPLOYMENT.md`, `docs/TWILIO_WEBHOOKS.md`, `docs/OPENAI_REALTIME.md`
 
 ## Tests
-`npm test` — 20 passing: auth, password hashing, validation, duplicate email, session invalidation, audit log, cross-org isolation, encryption, WebSocket ticket auth, per-org event isolation, unknown WS path, health, concurrent migrations.
+`npm test` — 36 passing (16 new in Phase 2: OpenAI/Twilio save, encryption, masking, test success/failure messages, number sync, default rules, geo permissions, setup %, RBAC). Earlier suites: auth, password hashing, validation, duplicate email, session invalidation, audit log, cross-org isolation, encryption, WebSocket ticket auth, per-org event isolation, unknown WS path, health, concurrent migrations.
 The production build was also checked locally: `migrate.js` then `index.js` then `worker.js` ran with NODE_ENV=production; health reported all OK; SIGTERM shut both down cleanly. `verify-deployment.mjs` passed against the local stack.
 Web: `tsc`, `eslint`, and `next build` all pass. Manual smoke test through the web proxy passed.
 
 ## Required credentials / integration status
 | Integration | Needed in phase | Status |
 |---|---|---|
-| OpenAI API key | 2 (enter it in the UI) | Not connected |
-| Twilio Account SID + Auth Token | 2 (enter them in the UI) | Not connected |
+| OpenAI API key | 2: enter on the Integrations page | ⏳ Waiting for owner |
+| Twilio Account SID + Auth Token | 2: enter on the Integrations page | ⏳ Waiting for owner |
 | Twilio API Key SID/Secret + TwiML App | 3 | Not created yet |
 | Public HTTPS URL for Twilio webhooks (tunnel or deployed backend) | 3 | Not set up |
 | Supabase project | 9 | Not needed yet (local Postgres) |

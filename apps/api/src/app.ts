@@ -11,6 +11,9 @@ import { errorHandler, notFoundHandler } from "./middleware/errors.js";
 import authRoutes from "./modules/auth/routes.js";
 import dashboardRoutes from "./modules/dashboard/routes.js";
 import realtimeRoutes from "./realtime/routes.js";
+import integrationRoutes from "./modules/integrations/routes.js";
+import phoneNumberRoutes from "./modules/phone-numbers/routes.js";
+import setupRoutes from "./modules/setup/routes.js";
 import { redis, redisHealthy } from "./lib/redis.js";
 import { WORKER_HEARTBEAT_KEY } from "./queues/index.js";
 
@@ -54,6 +57,9 @@ export function createApp() {
   api.use("/auth", authRoutes);
   api.use("/dashboard", dashboardRoutes);
   api.use("/realtime", realtimeRoutes);
+  api.use("/integrations", integrationRoutes);
+  api.use("/phone-numbers", phoneNumberRoutes);
+  api.use("/setup", setupRoutes);
   app.use("/api", api);
 
   app.use(notFoundHandler);
