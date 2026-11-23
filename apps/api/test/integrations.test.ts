@@ -206,7 +206,8 @@ describe("setup wizard", () => {
     const res = await agent.get("/api/setup");
     expect(res.body.percent).toBe(0);
     expect(res.body.steps).toHaveLength(8);
-    expect(res.body.steps.find((s: any) => s.key === "test_ai_call").status).toBe("not_available_yet");
+    expect(res.body.steps.find((s: any) => s.key === "test_ai_call").status).toBe("pending");
+    expect(res.body.steps.find((s: any) => s.key === "bulk_enabled").status).toBe("not_available_yet");
   });
 });
 

@@ -10,6 +10,9 @@ import { publicUrl } from "../voice/twiml-app.js";
 import { conferenceName, hangUpLegs, logCallEvent, mapTwilioStatus, TERMINAL, transitionCall } from "../calls/service.js";
 import { explainCallError } from "../calls/twilio-errors.js";
 import { verifyTwilio } from "./twilio-signature.js";
+import { randomBytes } from "node:crypto";
+import { env } from "../../config/env.js";
+import { hashToken, MEDIA_STREAM_PREFIX } from "../ai/bridge.js";
 
 const { VoiceResponse } = twilio.twiml;
 const router = Router();
@@ -74,6 +77,27 @@ router.post("/voice/client", verifyTwilio, async (req, res) => {
       await hangUpLegs(orgId, callId);
     }
   });
+});
+
+/**
+ * AI call answered: connect its audio to the AI bridge over a bidirectional Media Stream.
+ * A one-time token (only its hash is stored) is passed as a Stream <Parameter> and checked again
+ * when the stream starts, on top of the Twilio-signed WebSocket handshake.
+ */
+router.post("/voice/ai", verifyTwilio, async (req, res) => {
+  const { id: callId } = req.twilioCall!;
+  const token = randomBytes(24).toString("hex");
+  const { rowCount } = await query(
+    `UPDATE calls SET metadata = metadata || jsonb_build_object('streamTokenHash', $2::text)
+      WHERE id = $1 AND mode = 'ai' AND metadata->>'streamTokenHash' IS NULL
+        AND status NOT IN ('completed','busy','no_answer','failed','canceled')`,
+    [callId, hashToken(token)],
+  );
+  if (!rowCount) return reject(res, "Sorry, this call can't continue. Goodbye.");
+  const t = new VoiceResponse();
+  const stream = t.connect().stream({ url: env.PUBLIC_API_URL.replace(/^http/, "ws").replace(/\/$/, "") + MEDIA_STREAM_PREFIX + callId });
+  stream.parameter({ name: "token", value: token });
+  xml(res, t);
 });
 
 /** Recipient leg progress: initiated → ringing → answered → completed/busy/no-answer/failed. */

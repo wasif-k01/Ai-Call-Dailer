@@ -7,3 +7,4 @@ process.env.ALLOW_SIGNUP = "true";
 process.env.REDIS_URL = process.env.TEST_REDIS_URL ?? "redis://127.0.0.1:6379/15";
 process.env.RUN_MIGRATIONS_ON_START = "false";
 process.env.PUBLIC_API_URL = "https://api.test.example";
+process.env.OPENAI_REALTIME_URL = "ws://127.0.0.1:47123/v1/realtime";

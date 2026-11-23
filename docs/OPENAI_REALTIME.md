@@ -1,7 +1,6 @@
 # OpenAI Realtime configuration
 
-> **Status:** this is the design for Phase 4. It was checked against OpenAI's documentation on **2026-11-23**.
-> None of it is implemented yet. The open items at the bottom will be confirmed against the live API before Phase 4 is marked done.
+> **Status:** implemented in Phase 4 (`apps/api/src/modules/ai/bridge.ts`). The exact session config was **accepted by the live OpenAI Realtime API** on 2026-11-23 (session.updated with pcmu in/out, marin, semantic_vad, gpt-4o-mini-transcribe, both tools). A real phone test is still pending.
 
 ## Chosen architecture: Twilio Media Streams ⇄ API ⇄ OpenAI Realtime (WebSocket)
 
@@ -68,9 +67,11 @@ OpenAI now also offers **GPT-Live** (`gpt-live-1.1`, `wss://api.openai.com/v1/li
 - **Project ID** (`proj_…`): only needed if we later switch to SIP.
 - The account needs billing set up and access to the Realtime models.
 
-## Open items to confirm during Phase 4 (not guessed)
-- [ ] Whether `audio/pcmu` needs `"rate": 8000`. The docs show it both with and without.
-- [ ] The exact `session.audio.input.transcription` field and the event name for caller-side transcripts.
+## Open items
+- [x] `audio/pcmu` takes no `rate`. Confirmed in the API schema and accepted live.
+- [x] Caller transcription: `session.audio.input.transcription = { model: "gpt-4o-mini-transcribe" }`, delivered as `conversation.item.input_audio_transcription.completed`.
+- [x] Media stream security: the call id goes in the path (`/twilio/media-stream/<callId>`, since Stream URLs can't take query strings). The handshake checks the Twilio signature, and a one-time `<Parameter name="token">` is accepted only once.
+- [x] Tools: `end_call` hangs up after the goodbye audio has finished playing (Twilio mark). `add_to_do_not_call` writes to the DNC list immediately.
 - [ ] `semantic_vad` vs `server_vad` on real phone audio (latency, false interruptions).
 - [ ] A community report of `server_error` on Twilio pcmu sessions. Reproduce it on a test call before going live.
 - [ ] Final model choice: `gpt-realtime-2.1` vs `gpt-realtime-2.1-mini` vs GPT-Live.

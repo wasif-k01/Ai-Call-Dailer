@@ -31,6 +31,10 @@ const EnvSchema = z.object({
   SUPABASE_SERVICE_ROLE_KEY: z.string().optional(),
   SUPABASE_STORAGE_BUCKET: z.string().default("call-recordings"),
   LOG_LEVEL: z.string().default("info"),
+  /** OpenAI Realtime WebSocket endpoint (overridable only so tests can use a local fake). */
+  OPENAI_REALTIME_URL: z.string().default("wss://api.openai.com/v1/realtime"),
+  /** Model that transcribes what the person on the phone says. */
+  OPENAI_TRANSCRIBE_MODEL: z.string().default("gpt-4o-mini-transcribe"),
 });
 
 export type Env = z.infer<typeof EnvSchema>;

@@ -16,7 +16,7 @@ const STEPS = [
   { key: "bulk_enabled", title: "Enable bulk calling", phase: 6 },
 ] as const;
 
-const BUILT_PHASE = 3;
+const BUILT_PHASE = 4;
 
 router.get("/", requireAuth, async (req, res) => {
   const orgId = req.user!.orgId;

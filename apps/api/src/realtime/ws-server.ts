@@ -7,6 +7,7 @@ import { logger } from "../lib/logger.js";
 import { createRedis } from "../lib/redis.js";
 import { loadUserFromTicket } from "./tickets.js";
 import { EVENTS_CHANNEL } from "./events.js";
+import { handleMediaStreamUpgrade, MEDIA_STREAM_PREFIX } from "../modules/ai/bridge.js";
 
 interface Client extends WebSocket {
   orgId: string;
@@ -18,7 +19,7 @@ type UpgradeHandler = (req: IncomingMessage, socket: Duplex, head: Buffer, url: 
 /**
  * Single upgrade router for every WebSocket endpoint on the API:
  *   /ws/events            dashboard live updates (ticket-authenticated)
- *   (Phase 4 registers)   /twilio/media-stream for Twilio Media Streams audio
+ *   /twilio/media-stream/<callId>   Twilio Media Streams audio for AI calls (Twilio-signed)
  */
 export function attachWebSockets(server: Server) {
   const routes = new Map<string, UpgradeHandler>();
@@ -45,7 +46,9 @@ export function attachWebSockets(server: Server) {
 
   server.on("upgrade", (req, socket, head) => {
     const url = new URL(req.url ?? "/", "http://internal");
-    const handler = routes.get(url.pathname);
+    const handler = url.pathname.startsWith(MEDIA_STREAM_PREFIX)
+      ? (r: IncomingMessage, s: Duplex, h: Buffer) => handleMediaStreamUpgrade(r, s, h)
+      : routes.get(url.pathname);
     if (!handler) {
       socket.write("HTTP/1.1 404 Not Found\r\nConnection: close\r\n\r\n");
       return socket.destroy();

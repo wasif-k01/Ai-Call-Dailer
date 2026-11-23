@@ -1,5 +1,5 @@
-import { ComingSoon } from "@/components/shell/coming-soon";
+import DialerView from "@/components/dialer/dialer-view";
 
 export default function AiCallingPage() {
-  return <ComingSoon href="/ai-calling" />;
+  return <DialerView initialMode="ai" />;
 }

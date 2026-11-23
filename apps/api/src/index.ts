@@ -6,6 +6,7 @@ import { createApp } from "./app.js";
 import { pool } from "./db/pool.js";
 import { runMigrations } from "./db/migrate.js";
 import { attachWebSockets } from "./realtime/ws-server.js";
+import { activeBridges } from "./modules/ai/bridge.js";
 
 async function main() {
   if (env.RUN_MIGRATIONS_ON_START) await runMigrations((m) => logger.info(m));
@@ -23,6 +24,13 @@ async function main() {
     shuttingDown = true;
     logger.info(`${signal} received, shutting down`);
     server.close(); // stop accepting new connections; in-flight requests finish
+    // Let live AI calls finish (Railway keeps the old instance for drainingSeconds).
+    const drainUntil = Date.now() + Number(process.env.RAILWAY_DEPLOYMENT_DRAINING_SECONDS ?? 0) * 1000 - 10_000;
+    while (activeBridges.size > 0 && Date.now() < drainUntil) {
+      logger.info(`waiting for ${activeBridges.size} active AI call(s) to finish`);
+      await new Promise((r) => setTimeout(r, 5000));
+    }
+    for (const b of activeBridges) await b.finish("server shutdown");
     await ws.close();
     await closeRedis();
     await pool.end();

@@ -2,7 +2,7 @@
 
 _Last updated: 2026-11-23_
 
-## Current phase: Phase 3 done (real call verified) → Phase 4 next
+## Current phase: Phase 4 done (real AI call verified) → Phase 5 next
 
 | Phase | Scope | Status |
 |---|---|---|
@@ -48,6 +48,18 @@ apps/api  (Express 5, TypeScript, zod, pg)    :4000  → deploy to Railway/Rende
 - App shell: sidebar with all 14 sections, responsive mobile menu. Unbuilt sections show an honest "not built yet" placeholder with no fake controls.
 - Account Settings: profile and change password
 - Health check: `GET /health` (includes a DB check)
+
+## Phase 4: AI-to-Human calling
+- **Call path:** `POST /api/calls/ai` places the call through Twilio REST. When it's answered, `/webhooks/twilio/voice/ai` returns `<Connect><Stream>`, which feeds the bridge: Twilio μ-law ⇄ OpenAI Realtime (`gpt-realtime-2.1`, `audio/pcmu` both ways, so no re-encoding).
+- **Pre-call checks:** OpenAI connected, agent active, DNC list, geo permissions, caller ID, an org-wide cap on simultaneous AI calls (`org_settings.max_concurrent_ai_calls`, default 2), idempotency key.
+- **Interruptions:** when the person speaks over the AI (`input_audio_buffer.speech_started`), Twilio playback is cleared and the AI's turn is truncated at the point the person actually heard.
+- **Rules the agent can't override:** say it's an AI, honour opt-outs immediately (DNC tool), keep voicemail short, never ask for financial or ID data.
+- **Ending a call:** the AI's `end_call` tool, the agent's max duration timer, a Twilio `timeLimit` backstop, or Hang Up. If OpenAI disconnects mid-call, the call is hung up rather than left silent.
+- **Transcripts:** both sides are stored in `call_transcripts` and shown live on the call screen.
+- **Usage:** token usage per call goes into `usage_records` as an estimate. Cost is calculated in Phase 8.
+- **Redeploys:** live AI calls are drained up to Railway's draining window.
+- A starter agent, "General Assistant", is created automatically. Full agent management is Phase 5.
+- **UI:** the AI Calling page and the Dialer's AI mode have an agent picker, optional per-call instructions, and a live transcript.
 
 ## Phase 3: Dialer and human-to-human calling
 - **Call setup:** the browser (Twilio Voice SDK 2.18.5) joins a private Twilio **Conference**, and the recipient is dialed into it through the Participants API. A conference is used because Twilio documents Hold for conferences but not for a direct `<Dial>`.
@@ -97,7 +109,7 @@ apps/api  (Express 5, TypeScript, zod, pg)    :4000  → deploy to Railway/Rende
 - Docs: `DEPLOYMENT.md`, `docs/TWILIO_WEBHOOKS.md`, `docs/OPENAI_REALTIME.md`
 
 ## Tests
-`npm test` — 52 passing (16 new in Phase 3: pre-call validation, geo/DNC blocks, idempotency, one-active-call rule, RBAC, token grants, TwiML App create/repair, forged/unsigned webhooks, single-use call start, forward-only status, failure explanation, cancel-before-answer, hold, keypad). Earlier: 36 (16 new in Phase 2: OpenAI/Twilio save, encryption, masking, test success/failure messages, number sync, default rules, geo permissions, setup %, RBAC). Earlier suites: auth, password hashing, validation, duplicate email, session invalidation, audit log, cross-org isolation, encryption, WebSocket ticket auth, per-org event isolation, unknown WS path, health, concurrent migrations.
+`npm test` — 64 passing (10 new in Phase 4: REST call creation, OpenAI-required, DNC/inactive agent, concurrency cap, Twilio refusal, bad handshake signature, bad token, single-use token, the full bridge conversation, OpenAI-disconnect hang-up). Earlier: 52 (16 new in Phase 3: pre-call validation, geo/DNC blocks, idempotency, one-active-call rule, RBAC, token grants, TwiML App create/repair, forged/unsigned webhooks, single-use call start, forward-only status, failure explanation, cancel-before-answer, hold, keypad). Earlier: 36 (16 new in Phase 2: OpenAI/Twilio save, encryption, masking, test success/failure messages, number sync, default rules, geo permissions, setup %, RBAC). Earlier suites: auth, password hashing, validation, duplicate email, session invalidation, audit log, cross-org isolation, encryption, WebSocket ticket auth, per-org event isolation, unknown WS path, health, concurrent migrations.
 The production build was also checked locally: `migrate.js` then `index.js` then `worker.js` ran with NODE_ENV=production; health reported all OK; SIGTERM shut both down cleanly. `verify-deployment.mjs` passed against the local stack.
 Web: `tsc`, `eslint`, and `next build` all pass. Manual smoke test through the web proxy passed.
 
@@ -112,6 +124,11 @@ Web: `tsc`, `eslint`, and `next build` all pass. Manual smoke test through the w
 | Hosted Redis | 9 | Not needed yet (local Redis) |
 
 ## Known issues / notes
+- **From the first real AI call, fixed:**
+  - The AI greeted twice: the pick-up "hello" triggered a reply. Replies now stay off until the greeting has played.
+  - It said "I'm an AI assistant" in every reply. It now says it once, in the greeting, and again only if asked.
+- **Open, from the first real AI call:** the caller said the AI's "voice is breaking". The cause is unconfirmed. Likely suspects: short sounds ("mhm", noise) counting as interruptions, or audio being routed via the Mac and Cloudflare tunnel instead of a server near Twilio. Interruptions are now logged (`ai.interrupted`, with how much audio was heard) so the next test can tell them apart.
+- The greeting says "on behalf of Ai" because the workspace is named "Ai". This can be edited in AI Agents (Phase 5).
 - **Fixed 2026-11-23:** the Twilio test read the Account resource with the API key. Standard keys get error 70004 there, so valid keys were reported as "rejected". It now checks the key by listing TwiML Apps.
 - **Fixed:** saving an API key no longer resets the "countries checked" wizard step.
 - Not yet verified on a real call: Hold (spoken hold loop) and keypad tones (server-side `<Play digits>`).
