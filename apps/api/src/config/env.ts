@@ -39,8 +39,18 @@ const EnvSchema = z.object({
 
 export type Env = z.infer<typeof EnvSchema>;
 
+/** Empty values count as "not set", so defaults and optional settings work
+ *  (e.g. Railway variable references to an unset variable resolve to ""). */
+export function cleanEnv(raw: NodeJS.ProcessEnv) {
+  return Object.fromEntries(Object.entries(raw).filter(([, v]) => v !== undefined && v.trim() !== ""));
+}
+
+export function parseEnv(raw: NodeJS.ProcessEnv) {
+  return EnvSchema.safeParse(cleanEnv(raw));
+}
+
 function load(): Env {
-  const parsed = EnvSchema.safeParse(process.env);
+  const parsed = parseEnv(process.env);
   if (!parsed.success) {
     const issues = parsed.error.issues.map((i) => `  - ${i.path.join(".")}: ${i.message}`).join("\n");
     // Never print values, only which variables are wrong.
