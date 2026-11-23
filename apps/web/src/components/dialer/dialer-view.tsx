@@ -145,7 +145,8 @@ export default function DialerView({ initialMode = "human" }: { initialMode?: Mo
 
   /** Typing "+971…" switches the country selector to match. */
   function onNumberInput(value: string) {
-    const clean = value.replace(/[^\d+]/g, "");
+    let clean = value.replace(/[^\d+]/g, "");
+    if (clean.startsWith("00")) clean = `+${clean.slice(2)}`; // 00971… is the same as +971…
     setRaw(clean);
     if (clean.startsWith("+")) {
       const c = parsePhoneNumberFromString(clean)?.country;

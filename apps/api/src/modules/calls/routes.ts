@@ -12,8 +12,7 @@ import { assertPublicUrl, publicUrl } from "../voice/twiml-app.js";
 import { assertCountryAllowed, assertNotOnDnc, normalizeNumber, resolveCallerId } from "./destination.js";
 import { conferenceName, getCallView, hangUpLegs, logCallEvent, setCallMetadata, TERMINAL } from "./service.js";
 import { explainCallError } from "./twilio-errors.js";
-import { getAgent } from "../ai/agents.js";
-import { getIntegration } from "../integrations/store.js";
+import { placeAiCall } from "./ai-call.js";
 
 const router = Router();
 router.use(requireAuth);
@@ -95,76 +94,10 @@ const AiCallSchema = z.object({
  */
 router.post("/ai", requirePermission("calls:make"), callLimiter, async (req, res) => {
   const body = AiCallSchema.parse(req.body);
-  const orgId = req.user!.orgId;
-
-  const existing = await query(`SELECT id FROM calls WHERE org_id = $1 AND idempotency_key = $2`, [orgId, body.idempotencyKey]);
-  if (existing.rows[0]) return res.json({ call: await getCallView(orgId, existing.rows[0].id), duplicate: true });
-
-  const creds = await twilioCredsFor(orgId);
-  if (!creds) throw badRequest("Connect Twilio first (Integrations & API Settings).");
-  const openai = await getIntegration(orgId, "openai");
-  if (openai?.status !== "connected") throw badRequest("Connect and test OpenAI first (Integrations & API Settings).");
-  assertPublicUrl();
-
-  const agent = await getAgent(orgId, body.agentId);
-  if (!agent) throw badRequest("That AI agent doesn't exist.");
-  if (!agent.is_active) throw badRequest("That AI agent is switched off. Activate it in AI Agents first.");
-
-  const dest = normalizeNumber(body.to, body.defaultCountry);
-  await assertNotOnDnc(orgId, dest.e164);
-  const from = await resolveCallerId(orgId, body.fromNumberId);
-  if (from.e164 === dest.e164) throw badRequest("You can't call the same number you're calling from.");
-  try {
-    await assertCountryAllowed(orgId, creds, dest.countryIso);
-  } catch (err: any) {
-    if (err?.status === 400) throw err;
-    throw badRequest(explainCallError(err).message);
-  }
-
-  // Safety cap on simultaneous AI calls for the whole organisation.
-  const cap = await query(
-    `SELECT s.max_concurrent_ai_calls AS cap,
-            (SELECT count(*)::int FROM calls WHERE org_id = $1 AND mode = 'ai'
-               AND status IN ('initiated','queued','ringing','in_progress') AND started_at > now() - interval '2 hours') AS active
-       FROM org_settings s WHERE s.org_id = $1`,
-    [orgId],
-  );
-  if (cap.rows[0] && cap.rows[0].active >= cap.rows[0].cap)
-    throw conflict(`You already have ${cap.rows[0].active} AI call(s) running (limit ${cap.rows[0].cap}). Wait for one to finish.`);
-
-  const { rows } = await query(
-    `INSERT INTO calls (org_id, user_id, mode, from_number, to_number, to_country_iso, status, ai_agent_id, idempotency_key, metadata)
-     VALUES ($1,$2,'ai',$3,$4,$5,'initiated',$6,$7,$8)
-     ON CONFLICT (org_id, idempotency_key) DO NOTHING RETURNING id`,
-    [orgId, req.user!.id, from.e164, dest.e164, dest.countryIso, agent.id, body.idempotencyKey,
-     { fromNumberId: from.id, extraInstructions: body.instructions ?? null }],
-  );
-  if (!rows[0]) {
-    const again = await query(`SELECT id FROM calls WHERE org_id = $1 AND idempotency_key = $2`, [orgId, body.idempotencyKey]);
-    return res.json({ call: await getCallView(orgId, again.rows[0].id), duplicate: true });
-  }
-  const callId = rows[0].id as string;
-  try {
-    const call = await twilioClient(creds).calls.create({
-      to: dest.e164,
-      from: from.e164,
-      url: publicUrl(`/webhooks/twilio/voice/ai?callId=${callId}`),
-      method: "POST",
-      statusCallback: publicUrl(`/webhooks/twilio/status?callId=${callId}`),
-      statusCallbackMethod: "POST",
-      statusCallbackEvent: ["initiated", "ringing", "answered", "completed"],
-      timeout: 30,
-      timeLimit: agent.max_call_duration_sec + 30, // hard backstop; the bridge ends the call at the agent's limit
-    });
-    await query("UPDATE calls SET provider_call_sid = $2, status = 'queued', updated_at = now() WHERE id = $1", [callId, call.sid]);
-  } catch (err) {
-    const e = explainCallError(err);
-    await query("UPDATE calls SET status = 'failed', error_code = $2, error_message = $3, ended_at = now(), duration_sec = 0 WHERE id = $1", [callId, e.code, e.message]);
-    throw badRequest(e.message);
-  }
-  await logCallEvent(orgId, callId, "call.prepared", { to: dest.e164, from: from.e164, agentId: agent.id });
-  await audit(req, "call.ai.started", { entityType: "call", entityId: callId, metadata: { country: dest.countryIso, agentId: agent.id } });
-  res.status(201).json({ call: await getCallView(orgId, callId) });
+  const result = await placeAiCall({ orgId: req.user!.orgId, userId: req.user!.id, ...body, to: body.to });
+  if (!result.duplicate)
+    await audit(req, "call.ai.started", { entityType: "call", entityId: result.call.id, metadata: { country: result.call.to_country_iso, agentId: body.agentId } });
+  res.status(result.duplicate ? 200 : 201).json(result);
 });
 
 /** Live transcript so far (for the call screen). */

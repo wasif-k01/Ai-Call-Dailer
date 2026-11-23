@@ -12,8 +12,15 @@ export interface Destination {
 /** Twilio groups the US and Canada under one Geo Permissions entry ("US"). */
 const geoIso = (iso: string) => (iso === "CA" ? "US" : iso);
 
+/** "00971…" is the international prefix used in the UAE, UK, Pakistan and most of the world: treat it as "+". */
+export function cleanNumberInput(input: string) {
+  const t = input.trim();
+  return t.startsWith("00") ? `+${t.slice(2)}` : t;
+}
+
 export function normalizeNumber(input: string, defaultCountry?: string): Destination {
-  const p = parsePhoneNumberFromString(input.trim(), defaultCountry as CountryCode | undefined);
+  const clean = cleanNumberInput(input);
+  const p = parsePhoneNumberFromString(clean, clean.startsWith("+") ? undefined : (defaultCountry as CountryCode | undefined));
   if (!p || !p.isValid()) throw badRequest("That phone number isn't valid. Include the country code, e.g. +971 50 123 4567.");
   if (!p.country) throw badRequest("Couldn't work out which country this number belongs to.");
   return { e164: p.number, countryIso: p.country };

@@ -10,6 +10,7 @@ import { publishEvent } from "../../realtime/events.js";
 import { hangUpLegs, logCallEvent, setCallMetadata } from "../calls/service.js";
 import { getIntegration, getSecrets, twilioCredsFor } from "../integrations/store.js";
 import { AI_TOOLS, buildInstructions, getAgent } from "./agents.js";
+import { applyDncToCampaigns } from "../campaigns/engine.js";
 
 /**
  * Twilio Media Streams ⇄ OpenAI Realtime bridge.
@@ -257,6 +258,7 @@ export class AiCallBridge {
          ON CONFLICT (org_id, phone_e164) DO NOTHING`,
         [this.orgId, rows[0].to_number],
       );
+      await applyDncToCampaigns(this.orgId, rows[0].to_number);
       await setCallMetadata(this.orgId, this.callId, { optedOut: true });
       this.sendOpenAI({ type: "conversation.item.create", item: { type: "function_call_output", call_id: fc.call_id, output: JSON.stringify({ ok: true }) } });
       this.sendOpenAI({ type: "response.create" }); // lets the AI apologise and say goodbye

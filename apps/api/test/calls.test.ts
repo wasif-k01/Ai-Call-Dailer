@@ -255,3 +255,11 @@ describe("Twilio webhooks", () => {
     expect(holdTwiml.text).toContain("Please hold");
   });
 });
+
+describe("number input", () => {
+  it("accepts the international 00 prefix", async () => {
+    const { normalizeNumber } = await import("../src/modules/calls/destination.js");
+    expect(normalizeNumber("00971 50 123 4567")).toEqual({ e164: "+971501234567", countryIso: "AE" });
+    expect(normalizeNumber("0501234567", "AE").e164).toBe("+971501234567");
+  });
+});

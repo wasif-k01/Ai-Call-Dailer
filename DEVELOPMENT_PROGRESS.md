@@ -2,7 +2,7 @@
 
 _Last updated: 2026-11-23_
 
-## Current phase: Phase 5 done → Phase 6 (bulk campaigns) next
+## Current phase: Phase 6 built: waiting for the owner's real small-campaign test
 
 | Phase | Scope | Status |
 |---|---|---|
@@ -11,7 +11,7 @@ _Last updated: 2026-11-23_
 | 3 | Unified Dialer + Human-to-Human calling (Twilio Voice JS SDK) | ✅ Real browser → UAE mobile call completed (75s) on 2026-11-23. **Hold and keypad not yet tried on a real call.** |
 | 4 | OpenAI Realtime voice + AI-to-Human calling | Pending |
 | 5 | AI Agent management | ✅ Done: CRUD, duplicate, activate/deactivate, guarded delete, instruction preview, test-call shortcut; 10 tests |
-| 6 | Bulk campaigns, CSV/XLSX upload, BullMQ queue, DNC list | Pending |
+| 6 | Bulk campaigns, CSV/XLSX upload, BullMQ queue, DNC list | 🟡 Built; 15 engine/API tests pass with mocked Twilio; **real campaign test pending** |
 | 7 | Live Calls, Call History, Recordings, Transcripts | Pending |
 | 8 | Usage & cost tracking, security hardening | Pending |
 | 9 | Production deployment + end-to-end testing | 🟡 Configs, docs and infrastructure code ready; **not deployed** (waiting for approval) |
@@ -48,6 +48,33 @@ apps/api  (Express 5, TypeScript, zod, pg)    :4000  → deploy to Railway/Rende
 - App shell: sidebar with all 14 sections, responsive mobile menu. Unbuilt sections show an honest "not built yet" placeholder with no fake controls.
 - Account Settings: profile and change password
 - Health check: `GET /health` (includes a DB check)
+
+## Phase 6: Bulk AI calling
+- **New campaign wizard:**
+  - Upload CSV/XLSX (parsed in the browser: phone/name columns are detected automatically) or paste numbers.
+  - The server checks every number, converts it to E.164 (accepting `00` and local formats), and flags duplicates and Do Not Call numbers.
+  - Preview table: valid numbers are pre-selected and any can be unticked.
+  - Choose agent, campaign instructions (the contact's name is added automatically) and caller ID.
+  - Set calling hours in the campaign's timezone (overnight windows work), how many calls run at once (1–10), retries (0–5) and the delay between retries.
+  - The campaign is saved as a draft.
+- **Starting a campaign:** the user ticks a consent / legal-authorisation box **and types the exact number of contacts**. Both are recorded with who confirmed and when.
+- **Engine (worker):**
+  - A BullMQ job scheduler ticks every 5s. Rows are locked (`FOR UPDATE SKIP LOCKED`) so several workers can run safely.
+  - Each tick: calling-hours check, per-campaign concurrency limit, and the account-wide AI call limit. Hitting the account limit sends the contact back to the queue without using up an attempt.
+  - Dial jobs use idempotent job ids and go through the same `placeAiCall` checks as manual AI calls, including a DNC check right before dialling.
+  - Problems that won't fix themselves (invalid number, blocked country, DNC) are not retried.
+  - Contacts stuck in "queued" are requeued, and contacts still "calling" after their call ended are reconciled.
+- **Outcomes** come from Twilio status webhooks: answered, completed, no_answer, busy, failed, opted_out. Retries follow the configured delay. The campaign auto-completes when every contact is done.
+- **Controls:** Start / Pause / Resume / Stop. Pause and Stop let calls already in progress finish. Only drafts can be deleted, and contacts can be removed before they're called.
+- **Live progress** over WebSocket, with polling as a fallback.
+- **Analytics:** total, attempted, answered, successful, failed, opted out, in progress, average duration. Total cost shows "—" until Phase 8.
+- **Do Not Call:** whether the AI or a person adds a number, every running campaign drops it immediately. Removing a number is admin-only and audit-logged.
+- **Contacts page:** search, paginate, add/edit/delete, consent status and source, DNC badge, call count. The Do Not Call tab lets you add numbers with a reason, see where each entry came from, and (admins only) remove entries.
+- **Fixes along the way:**
+  - The `00` international prefix was rejected as invalid; it's now accepted in the dialer, campaigns and contacts.
+  - Updating a contact failed (parameter count mismatch).
+  - The campaign-complete log write waited forever on its own row lock.
+- **Dev:** `npm run dev:api:tunnel` now also starts the worker with the tunnel URL, because the worker places campaign calls.
 
 ## Phase 5: AI Agent management
 - **AI Agents page:** a card per agent (voice, language, style/speed, max length, calls made) with these actions:
@@ -120,7 +147,7 @@ apps/api  (Express 5, TypeScript, zod, pg)    :4000  → deploy to Railway/Rende
 - Docs: `DEPLOYMENT.md`, `docs/TWILIO_WEBHOOKS.md`, `docs/OPENAI_REALTIME.md`
 
 ## Tests
-`npm test` — 74 passing (10 new in Phase 5: agents). Earlier: 64 (10 new in Phase 4: REST call creation, OpenAI-required, DNC/inactive agent, concurrency cap, Twilio refusal, bad handshake signature, bad token, single-use token, the full bridge conversation, OpenAI-disconnect hang-up). Earlier: 52 (16 new in Phase 3: pre-call validation, geo/DNC blocks, idempotency, one-active-call rule, RBAC, token grants, TwiML App create/repair, forged/unsigned webhooks, single-use call start, forward-only status, failure explanation, cancel-before-answer, hold, keypad). Earlier: 36 (16 new in Phase 2: OpenAI/Twilio save, encryption, masking, test success/failure messages, number sync, default rules, geo permissions, setup %, RBAC). Earlier suites: auth, password hashing, validation, duplicate email, session invalidation, audit log, cross-org isolation, encryption, WebSocket ticket auth, per-org event isolation, unknown WS path, health, concurrent migrations.
+`npm test` — 89 passing (15 new in Phase 6: validation, limits, consent and count gate, concurrency, calling hours, outcomes, retries, completion, pause/resume/stop, permanent failures, mid-campaign DNC, account-wide limit, opt-out, contacts and DNC). Earlier: 74 (10 new in Phase 5: agents). Earlier: 64 (10 new in Phase 4: REST call creation, OpenAI-required, DNC/inactive agent, concurrency cap, Twilio refusal, bad handshake signature, bad token, single-use token, the full bridge conversation, OpenAI-disconnect hang-up). Earlier: 52 (16 new in Phase 3: pre-call validation, geo/DNC blocks, idempotency, one-active-call rule, RBAC, token grants, TwiML App create/repair, forged/unsigned webhooks, single-use call start, forward-only status, failure explanation, cancel-before-answer, hold, keypad). Earlier: 36 (16 new in Phase 2: OpenAI/Twilio save, encryption, masking, test success/failure messages, number sync, default rules, geo permissions, setup %, RBAC). Earlier suites: auth, password hashing, validation, duplicate email, session invalidation, audit log, cross-org isolation, encryption, WebSocket ticket auth, per-org event isolation, unknown WS path, health, concurrent migrations.
 The production build was also checked locally: `migrate.js` then `index.js` then `worker.js` ran with NODE_ENV=production; health reported all OK; SIGTERM shut both down cleanly. `verify-deployment.mjs` passed against the local stack.
 Web: `tsc`, `eslint`, and `next build` all pass. Manual smoke test through the web proxy passed.
 

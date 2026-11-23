@@ -3,6 +3,7 @@ import { logger } from "../../lib/logger.js";
 import { publishEvent } from "../../realtime/events.js";
 import { twilioClient } from "../integrations/providers/twilio.js";
 import { twilioCredsFor } from "../integrations/store.js";
+import { updateContactFromCall } from "../campaigns/engine.js";
 
 export type CallStatus = "initiated" | "queued" | "ringing" | "in_progress" | "completed" | "busy" | "no_answer" | "failed" | "canceled";
 export const TERMINAL: CallStatus[] = ["completed", "busy", "no_answer", "failed", "canceled"];
@@ -63,6 +64,7 @@ export async function transitionCall(
     [callId, orgId, next, TERMINAL.includes(next), extra.durationSec ?? null, extra.errorCode ?? null, extra.errorMessage ?? null, extra.metadata ?? {}],
   );
   await emit(orgId, callId);
+  await updateContactFromCall(callId).catch((err) => logger.warn({ err, callId }, "campaign contact update failed"));
   return true;
 }
 
